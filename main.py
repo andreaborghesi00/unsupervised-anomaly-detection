@@ -66,18 +66,46 @@ def PCA_tSNE_visualization(data2visualize, NCOMP, LABELS, PAL):
 
 # %% [markdown]
 # # Data cleaning
-
 # %%
-# change the data type of the columns to float
+# convert 0-1 columns to boolean
+int_cols = df.select_dtypes(include=['int64']).columns
+# convert to bool if the column has only 0 and 1
+for col in int_cols:
+    if df[col].nunique() == 2:
+        df[col] = df[col].astype(bool)
+df.dtypes
 
-df = df.replace(',', '.', regex=True).astype(float)
-df.drop(['Unnamed: 22', 'Unnamed: 23'], axis=1, inplace=True)
+#%%
+bool_cols = df.select_dtypes(include=['bool']).columns
 df
 
-# %% [markdown]
-# # Visualize the data after PCA and tSNE
+#%%
+# change the data type of the columns to float
+df = df.replace(',', '.', regex=True)
+df.drop(['Unnamed: 22', 'Unnamed: 23'], axis=1, inplace=True)
+
+#%%
+# take columns that are not boolean
+float_cols = df.select_dtypes(exclude=['bool']).columns
+df[float_cols] = df[float_cols].astype(float)
+df.dtypes
 
 # %%
-PCA_tSNE_visualization(df, 2, np.ones(df.shape[0]), 'viridis')
+df.describe()
 
-
+#%%
+# check for missing values, none are found
+df.isnull().sum()
+# %%
+# scaling of float columns
+scaler = StandardScaler()
+df[float_cols] = scaler.fit_transform(df[float_cols])
+# %%
+# as expected the mean is (numerically) 0 and the standard deviation is (numerically) 1
+df.describe()
+# %%
+# PCA & tSNE floats visualization
+PCA_tSNE_visualization(df[float_cols], 2, np.ones(df.shape[0]), 'viridis')
+# %%
+# PCA & tSNE bools visualization
+PCA_tSNE_visualization(df[bool_cols], 2, np.ones(df.shape[0]), 'viridis')
