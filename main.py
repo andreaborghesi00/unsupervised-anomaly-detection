@@ -257,10 +257,10 @@ def proximity_matrix(data, metrics, weights=None):
 # %%
 # if proximity_matrix.npy exists, load it
 try:
-    prox_mat = np.load('proximity_matrix.npy')
+    prox_mat = np.load('datasets/proximity_matrix.npy')
 except:
     prox_mat = proximity_matrix(df, {np.bool_: 'hamming', np.float64: 'euclidean'})
-    np.save('proximity_matrix.npy', prox_mat)
+    np.save('datasets/proximity_matrix.npy', prox_mat)
 
 # %% [markdown]
 # ### Distance Based: NN Approach
