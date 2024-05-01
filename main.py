@@ -122,8 +122,8 @@ df.isnull().sum()
 
 # %%
 # scaling of float columns
-scaler = StandardScaler()
-df[float_cols] = scaler.fit_transform(df[float_cols])
+# scaler = StandardScaler()
+# df[float_cols] = scaler.fit_transform(df[float_cols])
 
 # %%
 # as expected the mean is (numerically) 0 and the standard deviation is (numerically) 1
@@ -254,18 +254,68 @@ def proximity_matrix(data, metrics, weights=None):
     return prox_matrix
 
 
+# %% [markdown]
+# Since there is no information available regarding the semantic of the features, all weights are set to one.
+
 # %%
 # if proximity_matrix.npy exists, load it
 try:
     prox_mat = np.load('datasets/proximity_matrix.npy')
 except:
+    # it takes 1.5 hours to compute the proximity matrix (i9-9900K)
     prox_mat = proximity_matrix(df, {np.bool_: 'hamming', np.float64: 'euclidean'})
     np.save('datasets/proximity_matrix.npy', prox_mat)
+
+# %%
+# symmetry check
+print(np.allclose(prox_mat, prox_mat.T))
+
+# %%
+# check zero diagonal
+print(np.allclose(np.diag(prox_mat), 0))
 
 # %% [markdown]
 # ### Distance Based: NN Approach
 
 # %%
-from sklearn.neighbors import NearestNeighbors as knn
+from sklearn.neighbors import NearestNeighbors
+
+# %%
+k = 5 
+knn = NearestNeighbors(n_neighbors=k-1, metric='precomputed') # if we query the same points then the first one will be the point itself and ignored by default, so to get k=5 we need to set k=4
+knn.fit(prox_mat);
+
+# %%
+dist, idx= knn.kneighbors()
+
+# %%
+idx
+
+# %%
+knearest = dist[:,3]
+sort_idx = np.argsort(knearest)
+
+# %%
+# sort idx based on sort_idx
+idx = idx[sort_idx]
+dist = dist[sort_idx]
+dist
+
+# %%
+anomaly_perc = 0.01
+n_anomalies = int(anomaly_perc*df.shape[0])
+anomalies = idx[df.shape[0]-n_anomalies:, -1]
+
+# %%
+anomalies.shape
+
+# %%
+anomalies
+
+# %%
+# anomalies visualization
+labels = np.zeros(df.shape[0])
+labels[anomalies] = 1
+PCA_tSNE_visualization(df, 2, labels, ['gray', 'red'])
 
 # %%
