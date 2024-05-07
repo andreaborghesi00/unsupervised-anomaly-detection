@@ -22,6 +22,9 @@ from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler, No
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
+from tqdm import tqdm
+import threading
+import queue
 
 # %%
 
@@ -281,7 +284,7 @@ print(np.allclose(np.diag(prox_mat), 0))
 from sklearn.neighbors import NearestNeighbors
 
 # %%
-k = 5 
+k = 2 # seems to work best with small k. notice how k=1 is not useful as the queried sample will be itself
 knn = NearestNeighbors(n_neighbors=k-1, metric='precomputed') # if we query the same points then the first one will be the point itself and ignored by default, so to get k=5 we need to set k=4
 knn.fit(prox_mat);
 
@@ -292,7 +295,7 @@ dist, idx= knn.kneighbors()
 idx
 
 # %%
-knearest = dist[:,3]
+knearest = dist[:,k-2]
 sort_idx = np.argsort(knearest)
 
 # %%
@@ -318,4 +321,124 @@ labels = np.zeros(df.shape[0])
 labels[anomalies] = 1
 PCA_tSNE_visualization(df, 2, labels, ['gray', 'red'])
 
+# %% [markdown]
+# It seems to work best when k is low, but in any case the results don't seem that great. This might be because we're dealing with a high number of dimensions with respect to the number of samples available.
+
+# %% [markdown]
+# ### Density Based
+
+# %% [markdown]
+# ## Clustering based
+
+# %% [markdown]
+# ### Prototype based clusters: K-Means++
+
 # %%
+# kmeans++ clustering
+nk = 4
+kmeans = KMeans(n_clusters=nk, init='k-means++', max_iter=1000, ).fit(df)
+labels = kmeans.labels_
+
+# kmeans++ visualization
+PCA_tSNE_visualization(df, nk, labels, 'viridis')
+
+# %% [markdown]
+# #### Elbow method
+# To find the optimal number of clusters we run the elbow method
+
+# %%
+inertia = []
+r = range(2,16)
+for k in r:
+    kmeans = KMeans(n_clusters=k, init='k-means++').fit(df)
+    inertia.append(kmeans.inertia_)
+
+#derivative
+first_derivative = np.diff(inertia)
+second_derivative = np.diff(first_derivative)
+
+# reasoning for the min of second derivative:
+# the first derivative is the slope of the inertia, while the second derivative is the acceleration of the inertia
+# the "elbow" represents where the inertia starts to decrease at a slower rate, i.e. where the acceleration is the smallest
+optimal_k = np.argmin(second_derivative) + 2 + 2 # +2 because we start from 2 clusters and +2 because each derivative is 1 element shorter than the previous one
+
+plt.plot(r[1:], first_derivative, marker='o', color='r', label='derivative', linestyle='--', alpha=.6)
+plt.plot(r[2:], second_derivative, marker='o', color='g', label='derivative', linestyle='--', alpha=.6)
+plt.plot(r, inertia, marker='o', color='b', label='inertia', alpha=.6)
+plt.axvline(x=optimal_k, color='g', linestyle='dotted', label='optimal number of clusters: {}'.format(optimal_k))
+
+# plt.axvline(x=???, color='g', linestyle='dotted', label='optimal number of clusters')
+plt.xticks(range(2,16))
+plt.title('Elbow method')
+plt.xlabel('Number of clusters')
+plt.ylabel('Inertia')
+plt.grid()
+plt.legend()
+plt.show()
+
+
+# %% [markdown]
+# If we run the cell above a few times we can clearly notice how the optimal value keeps changing in a range between 5-9. We therefore run it a number of times, say 100, and then plot the frequency of the optimal number of clusters for each run and take the most recurrent.
+#
+# The number of runs is as high as needed to obtain a consistent result.
+# Multithreading is applied to significantly speed up the process.
+
+# %%
+# 500 runs with 20 clusters takes around 2 minutes (i9-9900K)
+def elbow_method_run(k_range, result_queue):
+    inertia = []
+    for k in k_range:
+        kmeans = KMeans(n_clusters=k, init='k-means++').fit(df)
+        inertia.append(kmeans.inertia_)
+
+    #derivative
+    first_derivative = np.diff(inertia)
+    second_derivative = np.diff(first_derivative)
+    optimal_k = np.argmin(second_derivative) + 2 + 2 
+
+    result_queue.put(optimal_k)
+
+optimal_ks = np.zeros(20)
+runs = 500
+threads = []
+results = queue.Queue()
+
+# elbow method
+for run in tqdm(range(runs)):
+    threads.append(threading.Thread(target=elbow_method_run, args=(range(2, 21), results)))
+    threads[-1].start()
+
+for thread in tqdm(threads):
+    thread.join()
+    optimal_ks[results.get()] += 1
+
+most_recurrent_k = np.argmax(optimal_ks) + 1
+print(most_recurrent_k)
+
+
+# %%
+# optimal number of clusters histogram
+plt.bar(range(1, len(optimal_ks)+1), optimal_ks, alpha=.9)
+plt.axvline(x=most_recurrent_k, color='r', linestyle='dotted', alpha=.6)
+plt.xlabel('Optimal number of clusters')
+plt.ylabel('Frequency')
+plt.title('Frequency of optimal number of clusters')
+plt.xticks(range(1, 21), rotation='vertical')
+plt.show()
+
+# %% [markdown]
+# Best results are attained with 5-6 clusters 
+
+# %%
+kmeans = KMeans(n_clusters=most_recurrent_k+1, init='k-means++', n_init=1000).fit(df)
+labels = kmeans.labels_
+
+# kmeans++ visualization
+PCA_tSNE_visualization(df, most_recurrent_k, labels, 'viridis')
+
+# %%
+# cluster centers
+centers = kmeans.cluster_centers_
+
+# proximity of the cluster centers
+prox_centers = proximity_matrix(pd.DataFrame(centers), {np.float64: 'euclidean'})
