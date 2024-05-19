@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.16.1
+#       jupytext_version: 1.16.2
 #   kernelspec:
 #     display_name: Python 3
 #     language: python
@@ -145,6 +145,60 @@ PCA_tSNE_visualization(df[bool_cols], 2, np.ones(df.shape[0]), 'viridis')
 # %%
 # the whole thing
 PCA_tSNE_visualization(df, 2, np.ones(df.shape[0]), 'viridis')
+
+# %%
+# Visualization
+# -------------
+# Choose your preferred style: https://matplotlib.org/stable/gallery/style_sheets/style_sheets_reference.html
+
+
+plt.style.use('default')
+
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+from scipy.spatial.distance import pdist as pdist
+from scipy.spatial.distance import squareform as sf
+
+distance_metric = 'euclidean'
+PM = pdist(df[float_cols], metric=distance_metric)
+PM = sf(PM).round(2)
+[N,M] = np.shape(df[float_cols])
+
+fig1 = plt.figure(figsize=(30,10))
+fig1.suptitle('Visual inspection of float columns', fontsize=20)
+
+
+# Plot 1: 2D image of the entire dataset
+ax1 = fig1.add_subplot(121)
+im1 = ax1.imshow(df[float_cols], interpolation='nearest', aspect='auto', cmap='seismic')
+
+# create an axes on the right side of ax. The width of cax will be 5%
+# of ax and the padding between cax and ax will be fixed at 0.05 inch.
+divider = make_axes_locatable(ax1)
+cax = divider.append_axes("right", size="5%", pad=0.05)
+plt.colorbar(im1, cax=cax)
+
+ax1.set_xlabel('Attributes', fontsize=16)
+ax1.set_xticks(np.arange(0, M, step=1))
+ax1.set_ylabel('Observations', fontsize=16)
+ax1.set_yticks(np.arange(0, N, step=10))
+ax1.title.set_text('Dataset')
+
+
+# Plot 2: proximity matrix
+ax2 = fig1.add_subplot(122)
+im2 = ax2.imshow(PM, interpolation='nearest', aspect='auto', cmap='coolwarm')
+
+divider = make_axes_locatable(ax2)
+cax = divider.append_axes("right", size="5%", pad=0.05)
+plt.colorbar(im2, cax=cax)
+
+ax2.set_xlabel('Observations', fontsize=16)
+ax2.set_xticks(np.arange(0, N, step=10))
+ax2.set_ylabel('Observations', fontsize=16)
+ax2.set_yticks(np.arange(0, N, step=10))
+ax2.title.set_text('Proximity matrix (%s distance)' % distance_metric)
+
+plt.show()
 
 
 # %% [markdown]
@@ -398,10 +452,61 @@ print(np.allclose(np.diag(prox_mat), 0))
 # print(np.allclose(prox_mat, prox_mat_mt))
 
 # %% [markdown]
+# ----
 # ### Distance Based: NN Approach
 
 # %%
 from sklearn.neighbors import NearestNeighbors
+
+# %%
+# Apply the algorithm
+neighborhood_order = 5
+
+# Find neighborhood
+neighborhood_set   = NearestNeighbors(n_neighbors=neighborhood_order, algorithm='ball_tree').fit(df[float_cols])
+distances, indices = neighborhood_set.kneighbors(df[float_cols])
+
+# compute distances from 5th nearest neighbors and sort them
+dk_sorted     = np.sort(distances[:,-1])
+dk_sorted_ind = np.argsort(distances[:,-1])
+
+
+# Identify the outliers as those points with too high distance from their own 5th nearest neighbor
+from kneed import KneeLocator
+i = np.arange(len(distances))
+knee = KneeLocator(i, dk_sorted, S=100, curve='convex', direction='increasing', interp_method='polynomial', online=True)     # see other examples: https://kneed.readthedocs.io/en/stable/parameters.html
+'''
+S - The sensitivity parameter allows us to adjust how aggressive we want Kneedle to be when detecting knees.
+    Smaller values for S detect knees quicker, while larger values are more conservative.
+    Put simply, S is a measure of how many “flat” points we expect to see in the unmodified data curve before declaring a knee.
+'''
+knee_x = knee.knee
+knee_y = knee.knee_y    # OR: distances[knee.knee]
+
+print([knee_x, np.round(knee_y,2)])
+
+
+# Plot distances
+fig3 = plt.figure(figsize=(18,2))
+
+ax1 = fig3.add_subplot(121)
+plt.plot(distances[:,-1])
+ax1.set_xlabel('Data points', fontsize=10)
+ax1.set_xticks(np.arange(0, N, step=1000))
+ax1.set_ylabel('Distances\n(not sorted, %s)' % distance_metric, fontsize=10)
+# ax1.title.set_text('Proximity matrix (%s distance)' % distance_metric)
+plt.grid()
+
+ax2 = fig3.add_subplot(122)
+plt.plot(dk_sorted, 'o-')
+ax2.set_xlabel('Data points', fontsize=10)
+ax2.set_ylabel('Distances (sorted)', fontsize=10)
+plt.axvline(x=knee_x, color='k', linestyle='--')
+plt.axhline(y=knee_y, color='k', linestyle='--')
+plt.plot((knee_x), (knee_y), 'o', color='r')
+plt.grid()
+
+plt.show()
 
 # %%
 k = 2 # seems to work best with small k. notice how k=1 is not useful as the queried sample will be itself
@@ -892,3 +997,81 @@ prox_centers
 # %%
 # TODO: define a threshold for the datapoints that are too far from the cluster centers
 # TODO: move cells to have the analysis of the naive kmeans and the elbow method together and then the gower distance kmeans and the elbow method together
+
+# %% [markdown]
+# ----
+# ### Investigation with LOF
+
+# %%
+# Apply the algorithm
+from sklearn.neighbors import LocalOutlierFactor
+
+lof_model  = LocalOutlierFactor(n_neighbors  = neighborhood_order,
+                                algorithm='ball_tree',
+                                metric='minkowski', p=2,
+                                metric_params = None,
+                                contamination = 0.05)
+# dir(lof_model)
+LOF_labels = lof_model.fit_predict(df[float_cols])     # predict the labels (1 inlier, -1 outlier) of X according to LOF
+# dir(lof_model)
+LOF_values     = lof_model.negative_outlier_factor_
+# print(np.round(LOF_values,2))
+
+# %%
+df
+
+# %%
+# Verify the outlier detection, count and label the outliers
+
+distances, indices = neighborhood_set.kneighbors(df[float_cols])
+
+fig6 = plt.figure('LOF values', figsize=(8,5))
+plt.plot(distances[:,-1], 'k-')
+plt.xlabel('Data points', fontsize=10)
+plt.xticks(np.arange(0, N, step=10))
+plt.ylabel('Distances (not sorted) or LOF values', fontsize=10)
+plt.plot(LOF_values, 'ro-')
+plt.legend(["Distances (not sorted)", "LOF values"])
+plt.grid()
+plt.show()
+
+
+fig7 = plt.figure('Scatterplot with the LOF method', figsize=(10,5))
+sns.scatterplot( x = df['Dim_17'], y = df['Dim_18'], hue=LOF_labels, palette=['black','orange'])
+# sns.scatterplot( x = tsne_results[:,0], y = tsne_results[:,1], hue=LOF_labels, palette=['black','orange'])
+# sns.scatterplot( x = pca_results[:,0], y = pca_results[:,1], hue=LOF_labels, palette=['black','orange'])
+sns.set_theme(style='dark')
+plt.xlabel('Dimension no.1')
+plt.ylabel('Dimension no.2')
+plt.legend(['normal','outlier'])
+plt.grid()
+plt.show()
+
+
+# Count
+count4 = len(LOF_labels[LOF_labels==-1])
+print(count4)
+
+# %%
+y1 = NN_labels2
+y2 = LOF_labels
+
+from sklearn import metrics
+print(f"Homogeneity: {metrics.homogeneity_score(y1, y2):.3f}")
+print(f"Completeness: {metrics.completeness_score(y1, y2):.3f}")
+print(f"V-measure: {metrics.v_measure_score(y1, y2):.3f}")
+R = metrics.adjusted_rand_score(y1, y2)
+print(f"Adjusted Rand Index: {R:.3f}")
+print("Adjusted Mutual Information:" f" {metrics.adjusted_mutual_info_score(y1, y2):.3f}")
+
+
+# Visually inspect the match between the outliers found by the NN and LOF
+fig20 = plt.figure('Comparison spotted outliers', figsize=(18,2))
+plt.plot(y1, color='blue', marker="o", label='NN')
+plt.plot(y2, color='red', marker="x", label='LOF')
+plt.xlabel('Data points')
+plt.ylabel('Predicted label \n (outlier=-1, normal=1)', fontsize=10)
+plt.title('Match on outlier detection between NN and LOF (Rand index = %.2f)' %R)
+plt.legend(["NN", "LOF"])
+plt.grid()
+plt.show()
