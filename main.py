@@ -510,6 +510,13 @@ PCA_tSNE_visualization(df, 2, labels, ['gray', 'red'])
 #     \forall x,y\in\{0,1\}\quad f(x, y) = \begin{cases}1&\mathrm{if}\; x \ne y\\ 0&\mathrm{if}\; x=y\end{cases}
 # $$ 
 
+# %% [markdown]
+# ### Kmeans++ with gower distance implementation(s)
+# Since sklearn does not offer the possibility of running the kmeans++ algorithm with a precomputed proximity matrix as we did for the NN anomaly detection, we decide to implement it.<br>
+# The downside of reimplementing such an algorithm is efficiency. Sklearn does an exceptional job at providing extremely optimized implementations of many algorithms, one of which being Kmeans++, by implementing it in Cython, a superset of Python that allows for the inclusion of C/C++ code.<br>
+# Since optimizing algorithms with such tools is out of the scope of this project, our implementation will stick to pure python. We will nonetheless try to optimize it with the tools that we have. <br><br>
+# We first propose a naïve implementation of such (` kmeans_gower `), where the above stated considerations are not taken into account, and then a second implementation (` kmeans_gower_revisited `) that shows how simple mathematical observation can drastically increase the performances.
+
 # %%
 def kmeans_gower(data, n_clusters,metrics=None, weights=None, max_iter=300, random_state=None):
 
@@ -602,12 +609,16 @@ def kmeans_gower_revisited(data, n_clusters, metrics=None, weights=None, max_ite
     return labels, centroids, inertia
 
 
-# %%
-# l, c, i = kmeans_gower(df, 10, max_iter=10)
+# %% [markdown]
+# Here we show how the two implementation perform drastically different while computing the same results.
 
 # %%
-lr, cr, ir =kmeans_gower_revisited(df, 10, max_iter=20, keep_types=True)
-ir
+# %%time
+l, c, i = kmeans_gower(df, 10, max_iter=10)
+
+# %%
+# %%time
+lr, cr, ir =kmeans_gower_revisited(df, 10, max_iter=10, keep_types=True)
 
 # %%
 # kmeans++ clustering
@@ -619,11 +630,21 @@ PCA_tSNE_visualization(df, nk, labels, 'viridis')
 
 # %% [markdown]
 # #### Elbow method
-# To find the optimal number of clusters we run the elbow method
+# The first step to run prototype-based anomaly detection with Kmeans++ is to find the optimal number of medoids. We will do so by using the elbow method.
+# To determine the optimal number of clusters with the elbow method we usually look for the "elbow" in the analyzed function, in our case a function having on the x-axis the number of clusters and on the y-axis the inertia (or intra-cluster distance).<br>
+# If we run the cells below we can notice how the elbow tends to be somewhat shallow, as it doesn't really mark a very steep elbow. So we decide to make a few observations, trying to define where is this "elbow point".<br><br>
+# By definition, the function taken into account with the elbow method is a decreasing function (although some fluctuations are present), and the "elbow" is the point where the function stops decreasing drastically. This behaviour can be analyzed by looking at the second derivative of such function. We can define the elbow method as the minima of the second derivative, the point where the function stops decreasing drastically.<br><br>
+# Although such definition tends to identify the elbow point very early, we are fine with it, as by looking at the datset we can guess that the number of clusters is probably below 15.
+# This definition has also a second shortcoming, if the function decreases slowly and it has fluctuations, it can propose false positives.<br>
+# As a matter of fact, the cells below will show how the elbow point tends to fluctuate between 4 and 9. So we take a statistical approach by running this computation for a few hundreds time and observe the frequencies of the proposed optimal number of clusters in those runs.
+
+# %% [markdown]
+# For the sake of the project we will run the process twice, one using the sklearn Kmeans++ implementation, that does not take into account the mixed data types, and one with our Kmeans++ implementation. The number of runs is as high as needed to obtain a consistent result.<br><br>
 
 # %%
+# Single run of the elbow method with sklearn's Kmeans++
 inertia = []
-r = range(2,16)
+r = range(1,40)
 for k in r:
     kmeans = KMeans(n_clusters=k, init='k-means++').fit(df)
     inertia.append(kmeans.inertia_)
@@ -635,7 +656,7 @@ second_derivative = np.diff(first_derivative)
 # reasoning for the min of second derivative:
 # the first derivative is the slope of the inertia, while the second derivative is the acceleration of the inertia
 # the "elbow" represents where the inertia starts to decrease at a slower rate, i.e. where the acceleration is the smallest
-optimal_k = np.argmin(second_derivative) + 2 + 2 # +2 because we start from 2 clusters and +2 because each derivative is 1 element shorter than the previous one
+optimal_k = np.argmin(second_derivative) + 2 + 1 # +1 because we start from 1 clusters and +2 because each derivative is 1 element shorter than the previous one
 
 plt.plot(r[1:], first_derivative, marker='o', color='r', label='first derivative', linestyle='--', alpha=.6)
 plt.plot(r[2:], second_derivative, marker='o', color='g', label='second derivative', linestyle='--', alpha=.6)
@@ -643,7 +664,7 @@ plt.plot(r, inertia, marker='o', color='b', label='inertia', alpha=.6)
 plt.axvline(x=optimal_k, color='black', linestyle='dotted', label='optimal number of clusters: {}'.format(optimal_k))
 
 # plt.axvline(x=???, color='g', linestyle='dotted', label='optimal number of clusters')
-plt.xticks(range(2,16))
+plt.xticks(r)
 plt.title('Elbow method')
 plt.xlabel('Number of clusters')
 plt.ylabel('Inertia')
@@ -652,6 +673,7 @@ plt.legend()
 plt.show()
 
 # %%
+# single run of the elbow method with the custom kmeans
 inertia = []
 r = range(1,16)
 res_queue = queue.Queue()
@@ -708,14 +730,7 @@ plt.legend()
 plt.show()
 
 
-# %% [markdown]
-# If we run the cell above a few times we can clearly notice how the optimal value keeps changing in a range between 5-9. We therefore run it a number of times, say 100, and then plot the frequency of the optimal number of clusters for each run and take the most recurrent.
-#
-# The number of runs is as high as needed to obtain a consistent result.
-# Multithreading is applied to significantly speed up the process.
-
 # %%
-# 500 runs with 20 clusters takes around 2 minutes (i9-9900K)
 def elbow_method_run(k_range, result_queue):
     """
     Runs the elbow method to determine the optimal number of clusters (k) for K-means clustering.
@@ -788,9 +803,12 @@ def elbow_method_run_gower_revisited(data, k_range, result_queue, max_iter=100, 
 
 
 # %% [markdown]
-# Since the runs of the elbow methods tend to indicate different optimal points, we run the elbow methods multiple times and keep track of optimal number of clusters of each run to then check the relative frequencies of each
+# **Disclaimer**<br>
+# As mentioned before, our implementation is not as efficient as the sklearn one. The following cells can take hours to compute, as we run our non-optimized code for hundreds of times. We will nonetheless use multithreading to cut significantly computational time by 2-4 times depending on the CPU
 
 # %%
+# For sklearn's kmeans: 500 runs with 20 clusters takes around 2 minutes (i9-9900K)
+
 max_k = 11
 optimal_ks = np.zeros(max_k)
 runs = 500
@@ -833,7 +851,7 @@ plt.show()
 # %%
 max_k = 11
 optimal_ks = np.zeros(max_k)
-runs = 50 # our implementations is much slower than the sklearn one, so we can't afford to run too many times, this should take around 4 hours
+runs = 50 # our implementations is much slower than the sklearn one, so we can't afford to run too many times, this should take around 4 hours (max iters=100)
 threads = []
 results = queue.Queue()
 max_workers = 8
@@ -862,7 +880,10 @@ print(f'The most recurrent optimal number of clusters is {most_recurrent_k}')
 
 # %% [markdown]
 # Turns out that the two methods are not that different, and that could be expected as we proved that they differ only of a rounding operation.<br>
-# Best results are attained with 5-6 clusters 
+# Best results are attained with **5-6 clusters** 
+
+# %% [markdown]
+# ### Investigating on outliers
 
 # %%
 labels, medoids, inertia = kmeans_gower_revisited(df, 5, max_iter=100, keep_types=True)
@@ -876,8 +897,11 @@ df = df.convert_dtypes()
 
 (df.dtypes == medoids_df.dtypes).all()
 
+# %% [markdown]
+# We first compute the proximity matrix (using our custom distance functions) of the datapoints and the medoids. We then extract only the distance of each point with its medoid and proceed the investigation with that distances
+
 # %%
-# proximity of the cluster centers
+# proximity of datapoints to each medoid
 metrics = {np.bool_: 'hamming', np.float64: 'euclidean', float: 'euclidean'}
 prox_centers = proximity_matrix_asymmetric(df, medoids_df, metrics)
 
@@ -927,7 +951,7 @@ PCA_tSNE_visualization(df, 2, labels, ['gray', 'red'])
 
 # %%
 # Method 3: Elbow method
-
+# we could have used the same observation made above, but we will use scipy's KneeLocator as it is more robust 
 sorted_prox_centers = np.sort(prox_centers)
 knee = KneeLocator(np.arange(len(sorted_prox_centers)), sorted_prox_centers, S=1, curve='convex', direction='increasing', interp_method='polynomial', online=True)
 knee_x = knee.knee
