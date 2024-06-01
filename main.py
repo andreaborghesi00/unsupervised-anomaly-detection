@@ -126,7 +126,7 @@ df.describe()
 df.isnull().sum()
 
 # %%
-# scaling of float columns
+# # scaling of float columns
 scaler = StandardScaler()
 df[float_cols] = scaler.fit_transform(df[float_cols])
 
@@ -209,7 +209,7 @@ plt.show()
 
 # %% [markdown]
 # ### Proximity Matrix for mixed data-types
-# We should store these functions in as a library
+# We should store these functions in a library
 
 # %%
 def proximity_feat(x, y, metric):
@@ -336,92 +336,6 @@ def proximity_matrix_asymmetric(data1, data2, metrics, weights=None):
     return prox_matrix
 
 
-# %%
-def overall_proximity_thread(x, y, metrics, i, j, local_queue, weights=None):
-    """
-    Calculate the overall proximity between two vectors using different metrics.
-
-    Args:
-        x (list): The first input vector.
-        y (list): The second input vector.
-        metrics (dict): A dictionary of metrics in the form {type: metric}.
-        i (int): The index i.
-        j (int): The index j.
-        local_queue (Queue): A queue to store the result.
-        weights (list, optional): The weights for each element in the vectors. Defaults to None.
-
-    Raises:
-        ValueError: If the input metrics is not a non-empty dictionary or the two input vectors have different lengths.
-        ValueError: If the weights are negative.
-
-    Returns:
-        None, the result is stored in the local_queue.
-    """
-    if type(metrics) != dict or len(metrics) == 0:
-        raise ValueError("The input metrics must be a non-empty dictionary in the form: {type: metric}") 
-    if len(x) != len(y):
-        raise ValueError('The two input vectors must have the same length')
-    if weights is None:
-        weights = np.ones(len(x))
-    elif weights < 0:
-        raise ValueError('The weights must be non-negative')
-    
-    prox = 0
-    for xk, yk, wk in zip(x, y, weights):
-        curr_metric = metrics[type(xk)]
-        prox += wk*proximity_feat(xk, yk, curr_metric)        
-    local_queue.put([i,j,prox/len(x)])
-
-
-# %%
-# work in progress, i will try with threadingpool, right now too many threads are created and it crashes
-def proximity_matrix_multithreaded(data, metrics, weights=None, n_threads=100):
-    """
-    Compute the proximity matrix using multiple threads.
-
-    Args:
-        data (pandas.DataFrame): The input data.
-        metrics (list): List of proximity metrics to be used.
-        weights (list, optional): List of weights for each metric. Defaults to None.
-        n_threads (int, optional): Number of threads to use. Defaults to 100.
-
-    Returns:
-        numpy.ndarray: The proximity matrix.
-    """
-    threads = []
-    q_results = queue.Queue()
-    k = 0
-    prox_matrix = np.zeros((data.shape[0], data.shape[0]))
-    for i in tqdm(range(data.shape[0]), desc='Appending threads'):
-        for j in range(i, data.shape[0]): # since the matrix is symmetric we start from i, computing the upper triangle
-            t = threading.Thread(target=overall_proximity_thread, args=(data.iloc[i], data.iloc[j], i, j, metrics, q_results, weights))
-            threads.append(t)
-
-            if len(threads) % n_threads == 0:
-                for t in threads:
-                    t.start()
-                for t in threads:
-                    t.join()
-                while not q_results.empty():
-                    i, j, prox = q_results.get()
-                    prox_matrix[i, j] = prox
-                    prox_matrix[j, i] = prox
-                threads = []
-                gc.collect()
-        
-    # execute the remaining threads
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join()
-    while not q_results.empty():
-        i, j, prox = q_results.get()
-        prox_matrix[i, j] = prox
-        prox_matrix[j, i] = prox
-
-    return prox_matrix
-
-
 # %% [markdown]
 # Since there is no information available regarding the semantic of the features, all weights are set to one.
 
@@ -532,7 +446,7 @@ dist = dist[sort_idx]
 print(dist)
 
 # %%
-anomaly_perc = 0.01
+anomaly_perc = 0.05
 n_anomalies = int(anomaly_perc*df.shape[0])
 anomalies = idx[df.shape[0]-n_anomalies:, -1]
 
@@ -553,7 +467,7 @@ PCA_tSNE_visualization(df, 2, labels, ['gray', 'red'])
 # It seems to work best when k is low, but in any case the results don't seem that great. This might be because we're dealing with a high number of dimensions with respect to the number of samples available.
 
 # %% [markdown]
-# ### Density Based
+# ### Density Based [TODO]
 
 # %% [markdown]
 # ## Clustering based
@@ -635,6 +549,24 @@ def kmeans_gower(data, n_clusters,metrics=None, weights=None, max_iter=300, rand
 
 # %%
 def kmeans_gower_revisited(data, n_clusters, metrics=None, weights=None, max_iter=300, random_state=None, keep_types=False, result_queue=None):
+    """
+    Perform k-means clustering using the Gower distance metric.
+
+    Parameters:
+    - data: The input data for clustering.
+    - n_clusters: The number of clusters to create.
+    - metrics: A dictionary specifying the distance metric to use for each data type. If not provided, default metrics will be used.
+    - weights: The weights to apply to each feature. If not provided, equal weights will be used.
+    - max_iter: The maximum number of iterations for the k-means algorithm.
+    - random_state: The random seed for centroid initialization.
+    - keep_types: Whether to keep the original data types of the centroids.
+    - result_queue: A queue to store the clustering results.
+
+    Returns:
+    - labels: The cluster labels for each data point.
+    - centroids: The final centroid positions.
+    - inertia: The sum of squared distances between each data point and its nearest centroid.
+    """
     if metrics is None:
         metrics = {np.bool_: 'hamming', np.float64: 'euclidean', float: 'euclidean', bool: 'hamming'}
 
@@ -647,12 +579,11 @@ def kmeans_gower_revisited(data, n_clusters, metrics=None, weights=None, max_ite
 
     # for _ in tqdm(range(max_iter), desc=f'K-means Gower for {n_clusters}'):
     for _ in range(max_iter):
-        # Compute distances from each data point to centroids
         distances = np.array([np.array([np.linalg.norm(centroid - point) for centroid in centroids]) for point in data])
         labels = np.argmin(distances, axis=1)
         pass
         new_centroids = np.array([data[labels == k].mean(axis=0) for k in range(n_clusters)])
-        new_centroids[:, bool_indices] = np.round(new_centroids[:, bool_indices])
+        new_centroids[:, bool_indices] = np.round(new_centroids[:, bool_indices]) # the crucial rounding, all of this mess just for this line
 
         if np.allclose(new_centroids, centroids):
             break
@@ -722,7 +653,7 @@ plt.show()
 
 # %%
 inertia = []
-r = range(2,16)
+r = range(1,16)
 res_queue = queue.Queue()
 threads = []
 
@@ -760,7 +691,7 @@ second_derivative = np.diff(first_derivative)
 # reasoning for the min of second derivative:
 # the first derivative is the slope of the inertia, while the second derivative is the acceleration of the inertia
 # the "elbow" represents where the inertia starts to decrease at a slower rate, i.e. where the acceleration is the smallest
-optimal_k = np.argmin(second_derivative) + 2 + 2 # +2 because we start from 2 clusters and +2 because each derivative is 1 element shorter than the previous one
+optimal_k = np.argmin(second_derivative) + 2 + 1 # +2 because we start from 2 clusters and +2 because each derivative is 1 element shorter than the previous one
 
 plt.plot(r[1:], first_derivative, marker='o', color='r', label='first derivative', linestyle='--', alpha=.6)
 plt.plot(r[2:], second_derivative, marker='o', color='g', label='second derivative', linestyle='--', alpha=.6)
@@ -768,47 +699,7 @@ plt.plot(r, inertia, marker='o', color='b', label='inertia', alpha=.6)
 plt.axvline(x=optimal_k, color='black', linestyle='dotted', label='optimal number of clusters: {}'.format(optimal_k))
 
 # plt.axvline(x=???, color='g', linestyle='dotted', label='optimal number of clusters')
-plt.xticks(range(2,16))
-plt.title('Elbow method')
-plt.xlabel('Number of clusters')
-plt.ylabel('Inertia')
-plt.grid()
-plt.legend()
-plt.show()
-
-# %%
-inertia = []
-r = range(2,16)
-res_queue = queue.Queue()
-threads = []
-
-with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
-    for k in r:
-        executor.submit(kmeans_gower_revisited, df, k, None, None, 100, None, False, res_queue)
-    while not res_queue.empty():
-        l, c, i = res_queue.get()
-        inertia.append(i)
-
-
-    # l, c, i = kmeans_gower_revisited(df, k, max_iter=100)
-    # inertia.append(i)
-
-#derivative
-first_derivative = np.diff(inertia)
-second_derivative = np.diff(first_derivative)
-
-# reasoning for the min of second derivative:
-# the first derivative is the slope of the inertia, while the second derivative is the acceleration of the inertia
-# the "elbow" represents where the inertia starts to decrease at a slower rate, i.e. where the acceleration is the smallest
-optimal_k = np.argmin(second_derivative) + 2 + 2 # +2 because we start from 2 clusters and +2 because each derivative is 1 element shorter than the previous one
-
-plt.plot(r[1:], first_derivative, marker='o', color='r', label='first derivative', linestyle='--', alpha=.6)
-plt.plot(r[2:], second_derivative, marker='o', color='g', label='second derivative', linestyle='--', alpha=.6)
-plt.plot(r, inertia, marker='o', color='b', label='inertia', alpha=.6)
-plt.axvline(x=optimal_k, color='black', linestyle='dotted', label='optimal number of clusters: {}'.format(optimal_k))
-
-# plt.axvline(x=???, color='g', linestyle='dotted', label='optimal number of clusters')
-plt.xticks(range(2,16))
+plt.xticks(r)
 plt.title('Elbow method')
 plt.xlabel('Number of clusters')
 plt.ylabel('Inertia')
@@ -891,10 +782,13 @@ def elbow_method_run_gower_revisited(data, k_range, result_queue, max_iter=100, 
     # derivative
     first_derivative = np.diff(inertia)
     second_derivative = np.diff(first_derivative)
-    optimal_k = np.argmin(second_derivative) + 2 + 2
+    optimal_k = np.argmin(second_derivative) + 2 + 1
 
     result_queue.put(optimal_k)
 
+
+# %% [markdown]
+# Since the runs of the elbow methods tend to indicate different optimal points, we run the elbow methods multiple times and keep track of optimal number of clusters of each run to then check the relative frequencies of each
 
 # %%
 max_k = 11
@@ -905,7 +799,7 @@ results = queue.Queue()
 
 # elbow method
 for run in tqdm(range(runs)):
-    t = threading.Thread(target=elbow_method_run, args=(range(2, max_k), results))
+    t = threading.Thread(target=elbow_method_run, args=(range(1, max_k), results))
     threads.append(t)
     if len(threads) % 8 == 0:
         for thread in threads:
@@ -945,7 +839,7 @@ results = queue.Queue()
 max_workers = 8
 # elbow method
 for run in tqdm(range(runs)):
-    t = threading.Thread(target=elbow_method_run_gower_revisited, args=(df, range(2, max_k), results, 100, max_workers))
+    t = threading.Thread(target=elbow_method_run_gower_revisited, args=(df, range(1, max_k), results, 100, max_workers))
     threads.append(t)
     if len(threads) % max_workers == 0:
         for thread in threads:
@@ -967,35 +861,95 @@ most_recurrent_k = np.argmax(optimal_ks) + 1
 print(f'The most recurrent optimal number of clusters is {most_recurrent_k}')
 
 # %% [markdown]
+# Turns out that the two methods are not that different, and that could be expected as we proved that they differ only of a rounding operation.<br>
 # Best results are attained with 5-6 clusters 
 
 # %%
-kmeans = KMeans(n_clusters=most_recurrent_k, init='k-means++', n_init=1000).fit(df)
-labels = kmeans.labels_
-
-# kmeans++ visualization
-PCA_tSNE_visualization(df, most_recurrent_k, labels, 'viridis')
+labels, medoids, inertia = kmeans_gower_revisited(df, 5, max_iter=100, keep_types=True)
 
 # %%
-# cluster centers
-centers = kmeans.cluster_centers_
-centers_df = pd.DataFrame(centers, columns=df.columns)
-float_df = df.copy()
-float_df[bool_cols] = float_df[bool_cols].astype(np.float64)
+PCA_tSNE_visualization(df, 5, labels, 'viridis')
 
 # %%
-float_df.dtypes
+medoids_df = pd.DataFrame(medoids, columns=df.columns).convert_dtypes()
+df = df.convert_dtypes()
+
+(df.dtypes == medoids_df.dtypes).all()
 
 # %%
 # proximity of the cluster centers
 metrics = {np.bool_: 'hamming', np.float64: 'euclidean', float: 'euclidean'}
-prox_centers = proximity_matrix_asymmetric(float_df, centers_df, metrics)
+prox_centers = proximity_matrix_asymmetric(df, medoids_df, metrics)
 
 # %%
-prox_centers
+# we still have to process it as we want the distance of each element to its own cluster center and not to all cluster centers
+prox_centers.shape
 
 # %%
-# TODO: define a threshold for the datapoints that are too far from the cluster centers
+prox_centers = np.min(prox_centers, axis=1) # we don't need to use labels, as by definition an element's medoid is the closest to it
+
+# %%
+prox_centers.shape
+
+# %% [markdown]
+# Now we can handle what is an outlier in 3 main ways: decide a percentage of outliers and exclude the $x\%$ furthest elements from their medoids (1), use a threshold $\delta$ and exclude the elements that are further than $\delta$ from their medoid (2), or use the knee method on the ordered elements per distance from their medoids (3)
+
+# %%
+# Method 1: exclude 2% of the data
+
+n = 0.05
+n_samples_to_exclude = np.ceil(n*df.shape[0])
+idx_sorted_prox = np.argsort(prox_centers)[::-1] # sort in descending order
+idx_to_exclude = idx_sorted_prox[:int(n_samples_to_exclude)]
+idx_to_exclude.shape, idx_to_exclude
+
+# %%
+# visualize the excluded samples with method 1
+labels = np.zeros(df.shape[0])
+labels[idx_to_exclude] = 1
+PCA_tSNE_visualization(df, 2, labels, ['gray', 'red'])
+
+# %%
+# Method 2: thresholding
+
+median = np.median(prox_centers)
+std = np.std(prox_centers)
+threshold = median + 2*std
+
+idx_to_exclude = np.where(prox_centers > threshold)[0]
+idx_to_exclude.shape
+
+# %%
+# visualization of the excluded samples with method 2
+labels = np.zeros(df.shape[0])
+labels[idx_to_exclude] = 1
+PCA_tSNE_visualization(df, 2, labels, ['gray', 'red'])
+
+# %%
+# Method 3: Elbow method
+
+sorted_prox_centers = np.sort(prox_centers)
+knee = KneeLocator(np.arange(len(sorted_prox_centers)), sorted_prox_centers, S=1, curve='convex', direction='increasing', interp_method='polynomial', online=True)
+knee_x = knee.knee
+knee_y = knee.knee_y # our threshold
+idx_to_exclude = np.where(prox_centers > knee_y)[0]
+
+plt.plot(sorted_prox_centers, 'o-')
+plt.axvline(x=knee_x, color='k', linestyle='--')
+plt.axhline(y=knee_y, color='k', linestyle='--')
+plt.plot((knee_x), (knee_y), 'o', color='r')
+plt.grid()
+plt.show()
+
+# %%
+idx_to_exclude.shape
+
+# %%
+labels = np.zeros(df.shape[0])
+labels[idx_to_exclude] = 1
+PCA_tSNE_visualization(df, 2, labels, ['gray', 'red'])
+
+# %%
 # TODO: move cells to have the analysis of the naive kmeans and the elbow method together and then the gower distance kmeans and the elbow method together
 
 # %% [markdown]
