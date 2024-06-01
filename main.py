@@ -377,8 +377,8 @@ from sklearn.neighbors import NearestNeighbors
 neighborhood_order = 5
 
 # Find neighborhood
-neighborhood_set   = NearestNeighbors(n_neighbors=neighborhood_order, algorithm='ball_tree').fit(df[float_cols])
-distances, indices = neighborhood_set.kneighbors(df[float_cols])
+neighborhood_set   = NearestNeighbors(n_neighbors=neighborhood_order, metric='precomputed').fit(prox_mat)
+distances, indices = neighborhood_set.kneighbors()
 
 # compute distances from 5th nearest neighbors and sort them
 dk_sorted     = np.sort(distances[:,-1])
@@ -423,7 +423,16 @@ plt.grid()
 plt.show()
 
 # %%
-k = 2 # seems to work best with small k. notice how k=1 is not useful as the queried sample will be itself
+distances.shape
+
+# %%
+knee_outliers_idx = np.where(distances[:, -1] > knee_y)[0]
+knee_labels = np.ones(N)
+knee_labels[knee_outliers_idx] = -1
+PCA_tSNE_visualization(df, 2, knee_labels, ['red', 'gray'])
+
+# %%
+k = 5 # seems to work best with small k. notice how k=1 is not useful as the queried sample will be itself
 knn = NearestNeighbors(n_neighbors=k-1, metric='precomputed') # if we query the same points then the first one will be the point itself and ignored by default, so to get k=5 we need to set k=4
 knn.fit(prox_mat);
 
@@ -434,21 +443,17 @@ dist, idx= knn.kneighbors()
 print(*idx)
 
 # %%
-knearest = dist[:,k-2]
-sort_idx = np.argsort(knearest)
+knearest = dist[:,-1]
+sorted_dist_idx = np.argsort(knearest)[::-1]
 
 # %%
-# sort idx based on sort_idx
-# be careful not to run it more than once, otherwise the idx will be "sorted" again
-
-idx = idx[sort_idx]
-dist = dist[sort_idx]
-print(dist)
+print(*dist[sorted_dist_idx, -1])
 
 # %%
 anomaly_perc = 0.05
-n_anomalies = int(anomaly_perc*df.shape[0])
-anomalies = idx[df.shape[0]-n_anomalies:, -1]
+n_anomalies = np.round(anomaly_perc*df.shape[0])
+
+anomalies = sorted_dist_idx[:int(n_anomalies)]
 
 # %%
 anomalies.shape
@@ -458,9 +463,9 @@ anomalies
 
 # %%
 # anomalies visualization
-labels = np.zeros(df.shape[0])
-labels[anomalies] = 1
-PCA_tSNE_visualization(df, 2, labels, ['gray', 'red'])
+NN_labels = np.ones(df.shape[0])
+NN_labels[anomalies] = -1
+PCA_tSNE_visualization(df, 2, NN_labels, ['red', 'gray'])
 
 
 # %% [markdown]
@@ -629,7 +634,9 @@ labels = kmeans.labels_
 PCA_tSNE_visualization(df, nk, labels, 'viridis')
 
 # %% [markdown]
-# #### Elbow method
+# #### Finding the optimal number of clusters: Elbow method
+
+# %% [markdown]
 # The first step to run prototype-based anomaly detection with Kmeans++ is to find the optimal number of medoids. We will do so by using the elbow method.
 # To determine the optimal number of clusters with the elbow method we usually look for the "elbow" in the analyzed function, in our case a function having on the x-axis the number of clusters and on the y-axis the inertia (or intra-cluster distance).<br>
 # If we run the cells below we can notice how the elbow tends to be somewhat shallow, as it doesn't really mark a very steep elbow. So we decide to make a few observations, trying to define where is this "elbow point".<br><br>
@@ -921,7 +928,7 @@ prox_centers.shape
 # %%
 # Method 1: exclude 2% of the data
 
-n = 0.05
+n = 0.02
 n_samples_to_exclude = np.ceil(n*df.shape[0])
 idx_sorted_prox = np.argsort(prox_centers)[::-1] # sort in descending order
 idx_to_exclude = idx_sorted_prox[:int(n_samples_to_exclude)]
@@ -929,9 +936,9 @@ idx_to_exclude.shape, idx_to_exclude
 
 # %%
 # visualize the excluded samples with method 1
-labels = np.zeros(df.shape[0])
-labels[idx_to_exclude] = 1
-PCA_tSNE_visualization(df, 2, labels, ['gray', 'red'])
+KM1_labels = np.ones(df.shape[0])
+KM1_labels[idx_to_exclude] = -1
+PCA_tSNE_visualization(df, 2, KM1_labels, ['red', 'gray'])
 
 # %%
 # Method 2: thresholding
@@ -945,9 +952,9 @@ idx_to_exclude.shape
 
 # %%
 # visualization of the excluded samples with method 2
-labels = np.zeros(df.shape[0])
-labels[idx_to_exclude] = 1
-PCA_tSNE_visualization(df, 2, labels, ['gray', 'red'])
+KM2_labels = np.ones(df.shape[0])
+KM2_labels[idx_to_exclude] = -1
+PCA_tSNE_visualization(df, 2, KM2_labels, ['red', 'gray'])
 
 # %%
 # Method 3: Elbow method
@@ -964,14 +971,12 @@ plt.axhline(y=knee_y, color='k', linestyle='--')
 plt.plot((knee_x), (knee_y), 'o', color='r')
 plt.grid()
 plt.show()
-
-# %%
 idx_to_exclude.shape
 
 # %%
-labels = np.zeros(df.shape[0])
-labels[idx_to_exclude] = 1
-PCA_tSNE_visualization(df, 2, labels, ['gray', 'red'])
+KM3_labels = np.ones(df.shape[0])
+KM3_labels[idx_to_exclude] = -1
+PCA_tSNE_visualization(df, 2, KM3_labels, ['red', 'gray'])
 
 # %%
 # TODO: move cells to have the analysis of the naive kmeans and the elbow method together and then the gower distance kmeans and the elbow method together
@@ -985,53 +990,20 @@ PCA_tSNE_visualization(df, 2, labels, ['gray', 'red'])
 from sklearn.neighbors import LocalOutlierFactor
 
 lof_model  = LocalOutlierFactor(n_neighbors  = neighborhood_order,
-                                algorithm='ball_tree',
-                                metric='minkowski', p=2,
-                                metric_params = None,
+                                metric='precomputed',
                                 contamination = 0.05)
-# dir(lof_model)
-LOF_labels = lof_model.fit_predict(df[float_cols])     # predict the labels (1 inlier, -1 outlier) of X according to LOF
-# dir(lof_model)
+LOF_labels = lof_model.fit_predict(prox_mat)     # predict the labels (1 inlier, -1 outlier) of X according to LOF
 LOF_values     = lof_model.negative_outlier_factor_
-# print(np.round(LOF_values,2))
+np.where(LOF_labels == -1)[0].shape
 
 # %%
-df
+PCA_tSNE_visualization(df, 2, LOF_labels, ['red', 'gray'])
+
+# %% [markdown]
+# # Detections coherence
 
 # %%
-# Verify the outlier detection, count and label the outliers
-
-distances, indices = neighborhood_set.kneighbors(df[float_cols])
-
-fig6 = plt.figure('LOF values', figsize=(8,5))
-plt.plot(distances[:,-1], 'k-')
-plt.xlabel('Data points', fontsize=10)
-plt.xticks(np.arange(0, N, step=10))
-plt.ylabel('Distances (not sorted) or LOF values', fontsize=10)
-plt.plot(LOF_values, 'ro-')
-plt.legend(["Distances (not sorted)", "LOF values"])
-plt.grid()
-plt.show()
-
-
-fig7 = plt.figure('Scatterplot with the LOF method', figsize=(10,5))
-sns.scatterplot( x = df['Dim_17'], y = df['Dim_18'], hue=LOF_labels, palette=['black','orange'])
-# sns.scatterplot( x = tsne_results[:,0], y = tsne_results[:,1], hue=LOF_labels, palette=['black','orange'])
-# sns.scatterplot( x = pca_results[:,0], y = pca_results[:,1], hue=LOF_labels, palette=['black','orange'])
-sns.set_theme(style='dark')
-plt.xlabel('Dimension no.1')
-plt.ylabel('Dimension no.2')
-plt.legend(['normal','outlier'])
-plt.grid()
-plt.show()
-
-
-# Count
-count4 = len(LOF_labels[LOF_labels==-1])
-print(count4)
-
-# %%
-y1 = NN_labels2
+y1 = NN_labels
 y2 = LOF_labels
 
 from sklearn import metrics
