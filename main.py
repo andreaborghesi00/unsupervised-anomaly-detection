@@ -23,6 +23,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler, Normalizer
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
@@ -34,6 +35,9 @@ import gc
 from sklearn.neighbors import NearestNeighbors
 
 from itertools import combinations
+
+# %%
+df
 
 # %%
 
@@ -179,60 +183,6 @@ PCA_tSNE_visualization(df[bool_cols], 2, np.ones(df.shape[0]), 'viridis')
 # %%
 # the whole thing
 PCA_tSNE_visualization(df, 2, np.ones(df.shape[0]), 'viridis')
-
-# %%
-# Visualization
-# -------------
-# Choose your preferred style: https://matplotlib.org/stable/gallery/style_sheets/style_sheets_reference.html
-
-
-plt.style.use('default')
-
-from mpl_toolkits.axes_grid1 import make_axes_locatable
-from scipy.spatial.distance import pdist as pdist
-from scipy.spatial.distance import squareform as sf
-
-distance_metric = 'euclidean'
-PM = pdist(df[float_cols], metric=distance_metric)
-PM = sf(PM).round(2)
-[N,M] = np.shape(df[float_cols])
-
-fig1 = plt.figure(figsize=(30,10))
-fig1.suptitle('Visual inspection of float columns', fontsize=20)
-
-
-# Plot 1: 2D image of the entire dataset
-ax1 = fig1.add_subplot(121)
-im1 = ax1.imshow(df[float_cols], interpolation='nearest', aspect='auto', cmap='seismic')
-
-# create an axes on the right side of ax. The width of cax will be 5%
-# of ax and the padding between cax and ax will be fixed at 0.05 inch.
-divider = make_axes_locatable(ax1)
-cax = divider.append_axes("right", size="5%", pad=0.05)
-plt.colorbar(im1, cax=cax)
-
-ax1.set_xlabel('Attributes', fontsize=16)
-ax1.set_xticks(np.arange(0, M, step=1))
-ax1.set_ylabel('Observations', fontsize=16)
-ax1.set_yticks(np.arange(0, N, step=10))
-ax1.title.set_text('Dataset')
-
-
-# Plot 2: proximity matrix
-ax2 = fig1.add_subplot(122)
-im2 = ax2.imshow(PM, interpolation='nearest', aspect='auto', cmap='coolwarm')
-
-divider = make_axes_locatable(ax2)
-cax = divider.append_axes("right", size="5%", pad=0.05)
-plt.colorbar(im2, cax=cax)
-
-ax2.set_xlabel('Observations', fontsize=16)
-ax2.set_xticks(np.arange(0, N, step=10))
-ax2.set_ylabel('Observations', fontsize=16)
-ax2.set_yticks(np.arange(0, N, step=10))
-ax2.title.set_text('Proximity matrix (%s distance)' % distance_metric)
-
-plt.show()
 
 
 # %% [markdown]
@@ -395,6 +345,62 @@ print(np.allclose(prox_mat, prox_mat.T))
 # check zero diagonal
 print(np.allclose(np.diag(prox_mat), 0))
 # print(np.allclose(np.diag(prox_mat_mt), 0))
+
+# %%
+# Visualization
+# -------------
+# Choose your preferred style: https://matplotlib.org/stable/gallery/style_sheets/style_sheets_reference.html
+
+
+plt.style.use('default')
+
+
+
+N, M = prox_mat.shape
+fig1 = plt.figure(figsize=(30,10))
+fig1.suptitle('Visual inspection of proximity matrix', fontsize=20)
+
+
+# Plot 1: 2D image of the entire dataset
+ax1 = fig1.add_subplot(121)
+im1 = ax1.imshow(df[float_cols], interpolation='nearest', aspect='auto', cmap='seismic')
+
+# create an axes on the right side of ax. The width of cax will be 5%
+# of ax and the padding between cax and ax will be fixed at 0.05 inch.
+divider = make_axes_locatable(ax1)
+cax = divider.append_axes("right", size="5%", pad=0.05)
+plt.colorbar(im1, cax=cax)
+
+ax1.set_xlabel('Attributes', fontsize=16)
+ax1.set_xticks(np.arange(0, M, step=1))
+ax1.set_ylabel('Observations', fontsize=16)
+ax1.set_yticks(np.arange(0, N, step=10))
+ax1.title.set_text('Dataset')
+
+
+# Plot 2: proximity matrix
+ax2 = fig1.add_subplot(122)
+im2 = ax2.imshow(prox_mat, interpolation='nearest', aspect='auto', cmap='coolwarm')
+
+divider = make_axes_locatable(ax2)
+cax = divider.append_axes("right", size="5%", pad=0.05)
+plt.colorbar(im2, cax=cax)
+
+ax2.set_xlabel('Observations', fontsize=16)
+ax2.set_xticks(np.arange(0, N, step=10))
+ax2.set_ylabel('Observations', fontsize=16)
+ax2.set_yticks(np.arange(0, N, step=10))
+ax2.title.set_text('Proximity matrix')
+
+plt.show()
+
+# %%
+# how to show the proximity matrix with prox_mat
+plt.figure(figsize=(10,10))
+plt.imshow(prox_mat, cmap='viridis')
+plt.colorbar()
+plt.title('Proximity matrix')
+plt.show()
 
 # %% [markdown]
 # ----
@@ -1334,21 +1340,18 @@ tensor_data = torch.cat((bool_tensor, float_tensor), dim=1)
 dataset = TensorDataset(tensor_data)
 dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
 
-# Create and train the autoencoder
 input_dim = tensor_data.shape[1]
 encoding_dim = 6
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 autoencoder = Autoencoder(input_dim, encoding_dim).to(device)
 train_autoencoder(autoencoder, dataloader, epochs=100, device=device)
 
-# Reconstruct the data using the autoencoder
 autoencoder.eval()
 with torch.no_grad():
     reconstructed_data = autoencoder(tensor_data.to(device)).cpu().numpy()
 
 reconstructed_df = pd.DataFrame(reconstructed_data, columns=df.columns)
 
-# Calculate reconstruction error
 metrics = {np.bool_: 'hamming', np.float64: 'euclidean', float: 'euclidean'}
 reconstruction_error = calculate_reconstruction_error(df, reconstructed_df, bool_cols, metrics)
 
@@ -1385,15 +1388,10 @@ print(f"Adjusted Rand Index: {R:.3f}")
 print("Adjusted Mutual Information:" f" {metrics.adjusted_mutual_info_score(y1, y2):.3f}")
 
 
-# Visually inspect the match between the outliers found by the NN and LOF
 fig20 = plt.figure('Comparison spotted outliers', figsize=(40,2))
-
-# Filter data points where y1 is equal to -1
 mask1 = (y1 == -1)
-plt.scatter(np.where(mask1)[0], y1[mask1], color='blue', marker="o", label='NN')
-
-# Filter data points where y2 is equal to -1
 mask2 = (y2 == -1)
+plt.scatter(np.where(mask1)[0], y1[mask1], color='blue', marker="o", label='NN')
 plt.scatter(np.where(mask2)[0], y2[mask2], color='red', marker="s", label='LOF')
 
 plt.xlabel('Data points')
