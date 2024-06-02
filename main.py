@@ -27,6 +27,8 @@ import threading
 import queue
 import concurrent.futures
 import gc
+from sklearn.neighbors import NearestNeighbors
+
 from itertools import combinations
 
 # %%
@@ -356,7 +358,9 @@ def proximity_matrix_asymmetric(data1, data2, metrics, weights=None):
     Returns:
     prox_matrix (numpy array): The proximity matrix, where each element represents the proximity between two data points.
     """
-
+    # if data1 == data2:
+    #     return proximity_matrix_symmetric(data1, metrics, weights)
+    
     prox_matrix = np.zeros((data1.shape[0], data2.shape[0]))
     for i in tqdm(range(data1.shape[0]), desc='Computing proximity matrix'):
         for j in range(data2.shape[0]):
@@ -377,9 +381,6 @@ except:
     np.save('datasets/proximity_matrix.npy', prox_mat)
 
 # %%
-# prox_mat_mt = proximity_matrix_multithreaded(df, {np.bool_: 'hamming', np.float64: 'euclidean'}, 16)
-
-# %%
 # symmetry check
 print(np.allclose(prox_mat, prox_mat.T))
 # print(np.allclose(prox_mat_mt, prox_mat_mt.T))
@@ -389,16 +390,9 @@ print(np.allclose(prox_mat, prox_mat.T))
 print(np.allclose(np.diag(prox_mat), 0))
 # print(np.allclose(np.diag(prox_mat_mt), 0))
 
-# %%
-# check if the two matrices are similar
-# print(np.allclose(prox_mat, prox_mat_mt))
-
 # %% [markdown]
 # ----
 # ### Distance Based: NN Approach
-
-# %%
-from sklearn.neighbors import NearestNeighbors
 
 # %%
 # Apply the algorithm
@@ -455,9 +449,13 @@ distances.shape
 
 # %%
 knee_outliers_idx = np.where(distances[:, -1] > knee_y)[0]
+print(f'Number of outliers: {len(knee_outliers_idx)}')
 knee_labels = np.ones(N)
 knee_labels[knee_outliers_idx] = -1
 PCA_tSNE_visualization(df, 2, knee_labels, ['red', 'gray'])
+
+# %%
+plot_float_comb_dimensions(df, knee_labels, ['red', 'gray'])
 
 # %%
 k = 5 # seems to work best with small k. notice how k=1 is not useful as the queried sample will be itself
@@ -582,8 +580,12 @@ np.any(np.isinf(shortest_paths))
 
 # %%
 avg_shortest_path = np.mean(shortest_paths, axis=1)
-avg_shortest_path
+print(*avg_shortest_path)
 
+
+# %%
+# plt.hist(x=range(7200), y=avg_shortest_path, bins=1000)
+# plt.show()
 
 # %%
 def compute_cof(avg_shortest_paths, indices, k):
@@ -591,12 +593,16 @@ def compute_cof(avg_shortest_paths, indices, k):
     for i in range(len(avg_shortest_paths)):
         neighbors = indices[i]
         neighbor_avg_paths = avg_shortest_paths[neighbors]
-        cof_scores[i] = avg_shortest_paths[i] / (np.mean(neighbor_avg_paths) if np.mean(neighbor_avg_paths) != 0 else 1)
+        cof_scores[i] = avg_shortest_paths[i] / np.mean(neighbor_avg_paths)
     return cof_scores
 
 
 # %%
 cof_scores = compute_cof(avg_shortest_path, idx, k)
+
+# %%
+sorted_cof_idx = np.argsort(cof_scores)[::-1]
+print(*cof_scores[sorted_cof_idx])
 
 # %%
 print(*cof_scores)
@@ -705,15 +711,13 @@ def kmeans_gower(data, n_clusters,metrics=None, weights=None, max_iter=300, rand
 
 
 # %%
-def kmeans_gower_revisited(data, n_clusters, metrics=None, weights=None, max_iter=300, random_state=None, keep_types=False, result_queue=None):
+def kmeans_gower_revisited(data, n_clusters, max_iter=300, random_state=None, keep_types=False, result_queue=None):
     """
     Perform k-means clustering using the Gower distance metric.
 
     Parameters:
     - data: The input data for clustering.
     - n_clusters: The number of clusters to create.
-    - metrics: A dictionary specifying the distance metric to use for each data type. If not provided, default metrics will be used.
-    - weights: The weights to apply to each feature. If not provided, equal weights will be used.
     - max_iter: The maximum number of iterations for the k-means algorithm.
     - random_state: The random seed for centroid initialization.
     - keep_types: Whether to keep the original data types of the centroids.
@@ -724,9 +728,6 @@ def kmeans_gower_revisited(data, n_clusters, metrics=None, weights=None, max_ite
     - centroids: The final centroid positions.
     - inertia: The sum of squared distances between each data point and its nearest centroid.
     """
-    if metrics is None:
-        metrics = {np.bool_: 'hamming', np.float64: 'euclidean', float: 'euclidean', bool: 'hamming'}
-
     # Initialize centroids using k-means++ initialization
     template = data.sample(n_clusters, random_state=random_state).values
     centroids = data.sample(n_clusters, random_state=random_state).values.astype(float)
@@ -739,7 +740,7 @@ def kmeans_gower_revisited(data, n_clusters, metrics=None, weights=None, max_ite
         distances = np.array([np.array([np.linalg.norm(centroid - point) for centroid in centroids]) for point in data])
         labels = np.argmin(distances, axis=1)
         pass
-        new_centroids = np.array([data[labels == k].mean(axis=0) for k in range(n_clusters)])
+        new_centroids = np.array([data[labels == k].mean(axis=0) for k in range(n_clusters)]) 
         new_centroids[:, bool_indices] = np.round(new_centroids[:, bool_indices]) # the crucial rounding, all of this mess just for this line
 
         if np.allclose(new_centroids, centroids):
@@ -796,7 +797,7 @@ PCA_tSNE_visualization(df, nk, labels, 'viridis')
 # %%
 # Single run of the elbow method with sklearn's Kmeans++
 inertia = []
-r = range(1,40)
+r = range(1,20)
 for k in r:
     kmeans = KMeans(n_clusters=k, init='k-means++').fit(df)
     inertia.append(kmeans.inertia_)
@@ -902,7 +903,7 @@ def elbow_method_run(k_range, result_queue):
     # derivative
     first_derivative = np.diff(inertia)
     second_derivative = np.diff(first_derivative)
-    optimal_k = np.argmin(second_derivative) + 2 + 2
+    optimal_k = np.argmin(second_derivative) + 1 + 2
 
     result_queue.put(optimal_k)
 
@@ -1132,6 +1133,7 @@ PCA_tSNE_visualization(df, 2, KM3_labels, ['red', 'gray'])
 # %%
 plot_float_comb_dimensions(df, KM3_labels, ['red', 'gray'])
 
+
 # %%
 # TODO: move cells to have the analysis of the naive kmeans and the elbow method together and then the gower distance kmeans and the elbow method together
 
@@ -1139,13 +1141,91 @@ plot_float_comb_dimensions(df, KM3_labels, ['red', 'gray'])
 # ----
 # ## Reconstruction Based: PCA
 
+# %%
+
+# %%
+def pca_reconstruction_error(data, n_components):
+    """
+    Calculate the reconstruction error between the original data and the reconstructed data.
+
+    Parameters:
+    data (pandas DataFrame): The original data.
+    reconstructed (pandas DataFrame): The reconstructed data.
+    metrics (dict): A dictionary containing the metrics to be used for each type of element in the vectors.
+
+    Returns:
+    float: The average reconstruction error.
+    """
+    pca = PCA(n_components=n_components)
+    pca.fit(data)
+    
+    reconstructed = pca.inverse_transform(pca.transform(data))
+    bool_cols_idx = [df.columns.get_loc(col) for col in bool_cols]
+    reconstructed[:, bool_cols_idx] = np.round(reconstructed[:, bool_cols_idx])
+
+    df_reconstructed = pd.DataFrame(reconstructed, columns=df.columns)
+    df_reconstructed[bool_cols] = df_reconstructed[bool_cols].astype(bool)
+
+    metrics = {np.bool_: 'hamming', np.float64: 'euclidean', float: 'euclidean'}
+    error = np.array([gower_distance(df.iloc[i], df_reconstructed.iloc[i], metrics) for i in range(df.shape[0])])
+    
+    return np.sum(error)/reconstructed.shape[0]
+
+
+# %%
+errors = [] 
+max_components = len(df.columns)
+
+for n in tqdm(range(1, max_components)):
+    error = pca_reconstruction_error(df, n)
+    errors.append(error)
+
+plt.plot(range(1, max_components), errors, marker='o')
+plt.xlabel('Number of components')
+plt.ylabel('Reconstruction error')
+plt.title('Reconstruction error vs number of components')
+plt.xticks(range(1, max_components))
+plt.grid()
+plt.show()
+
+# %%
+pca = PCA(n_components=6)
+pca.fit(df)
+
+reconstructed = pca.inverse_transform(pca.transform(df))
+
+bool_cols_idx = [df.columns.get_loc(col) for col in bool_cols]
+reconstructed[:, bool_cols_idx] = np.round(reconstructed[:, bool_cols_idx])
+
+df_reconstructed = pd.DataFrame(reconstructed, columns=df.columns)
+df_reconstructed[bool_cols] = df_reconstructed[bool_cols].astype(bool)
+
+# reconstruction error with gower distance
+
+reconstruction_error = np.array([gower_distance(df.iloc[i], df_reconstructed.iloc[i], metrics) for i in range(df.shape[0])])
+
+# %%
+n = 0.05
+n_samples_to_exclude = np.ceil(n*df.shape[0])
+idx_sorted_reconstruction = np.argsort(reconstruction_error)[::-1] # sort in descending order
+idx_to_exclude = idx_sorted_reconstruction[:int(n_samples_to_exclude)]
+idx_to_exclude.shape, idx_to_exclude
+
+# %%
+PCA_labels = np.ones(df.shape[0])
+PCA_labels[idx_to_exclude] = -1
+PCA_tSNE_visualization(df, 2, PCA_labels, ['red', 'gray'])
+
+# %%
+plot_float_comb_dimensions(df, PCA_labels, ['red', 'gray'])
+
 # %% [markdown]
 # ----
 # # Detections coherence
 
 # %%
 y1 = COF_labels
-y2 = KM3_labels
+y2 = NN_labels
 
 from sklearn import metrics
 
