@@ -18,6 +18,10 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import DataLoader, TensorDataset
 from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler, Normalizer
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
@@ -555,7 +559,8 @@ def plot_kj_dimension(df, labels, feat1, feat2, palette):
 plot_float_comb_dimensions(df, LOF_labels, ['red', 'gray'])
 
 # %% [markdown]
-# ### Graph Based: COF
+# ----
+# ### <center>Graph Based: COF
 # COF is designed to identify outliers based on the connectivity structure, which can be more robust in high-dimensional spaces or in datasets with complex structures where traditional distance-based methods might struggle. By leveraging graph theory, COF can capture more nuanced relationships between points that pure distance metrics might miss.
 
 # %%
@@ -1230,41 +1235,6 @@ plot_float_comb_dimensions(df, PCA_labels, ['red', 'gray'])
 # ### <center>Encoder-Decoder
 
 # %%
-def encoder_decoder_reconstruction_error(data, encoder, decoder):
-    """
-    Calculate the reconstruction error between the original data and the reconstructed data.
-
-    Parameters:
-    data (pandas DataFrame): The original data.
-    encoder (keras Model): The encoder model.
-    decoder (keras Model): The decoder model.
-
-    Returns:
-    float: The average reconstruction error.
-    """
-    reconstructed = decoder.predict(encoder.predict(data))
-    bool_cols_idx = [df.columns.get_loc(col) for col in bool_cols]
-    reconstructed[:, bool_cols_idx] = np.round(reconstructed[:, bool_cols_idx])
-
-    df_reconstructed = pd.DataFrame(reconstructed, columns=df.columns)
-    df_reconstructed[bool_cols] = df_reconstructed[bool_cols].astype(bool)
-
-    metrics = {np.bool_: 'hamming', np.float64: 'euclidean', float: 'euclidean'}
-    error = np.array([gower_distance(df.iloc[i], df_reconstructed.iloc[i], metrics) for i in range(df.shape[0])])
-    
-    return np.sum(error)/reconstructed.shape[0]
-
-
-# %%
-import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
-import torch
-import torch.nn as nn
-import torch.optim as optim
-from torch.utils.data import DataLoader, TensorDataset
-from tqdm import tqdm
-
 class Autoencoder(nn.Module):
     def __init__(self, input_dim, encoding_dim):
         super(Autoencoder, self).__init__()
@@ -1358,8 +1328,6 @@ plot_float_comb_dimensions(df, autoencoder_labels, ['red', 'gray'])
 y1 = autoencoder_labels
 y2 = KM1_labels
 
-from sklearn import metrics
-
 print(f"Shapes: {-np.sum(y1[np.where(y1==-1)])}, {-np.sum(y2[np.where(y2==-1)])}")
 print(f"Homogeneity: {metrics.homogeneity_score(y1, y2):.3f}")
 print(f"Completeness: {metrics.completeness_score(y1, y2):.3f}")
@@ -1370,11 +1338,18 @@ print("Adjusted Mutual Information:" f" {metrics.adjusted_mutual_info_score(y1, 
 
 
 # Visually inspect the match between the outliers found by the NN and LOF
-fig20 = plt.figure('Comparison spotted outliers', figsize=(18,2))
-plt.plot(y1, color='blue', marker="o", label='NN')
-plt.plot(y2, color='red', marker="x", label='LOF')
+fig20 = plt.figure('Comparison spotted outliers', figsize=(40,2))
+
+# Filter data points where y1 is equal to -1
+mask1 = (y1 == -1)
+plt.scatter(np.where(mask1)[0], y1[mask1], color='blue', marker="o", label='NN')
+
+# Filter data points where y2 is equal to -1
+mask2 = (y2 == -1)
+plt.scatter(np.where(mask2)[0], y2[mask2], color='red', marker="s", label='LOF')
+
 plt.xlabel('Data points')
-plt.ylabel('Predicted label \n (outlier=-1, normal=1)', fontsize=10)
+plt.ylabel('Predicted label \n (outlier=-1)', fontsize=10)
 plt.title('Match on outlier detection between NN and LOF (Rand index = %.2f)' %R)
 plt.legend(["NN", "LOF"])
 plt.grid()
