@@ -472,6 +472,15 @@ knn.fit(prox_mat);
 dist, idx= knn.kneighbors()
 
 # %%
+plt.hist(dist[:, -1], bins=100)
+plt.title('Distance to 5th nearest neighbor')
+plt.xlabel('Distance')
+plt.ylabel('Frequency')
+plt.xticks(np.arange(0, 1.1, step=0.1))
+plt.xlim(0, 1)
+plt.show()
+
+# %%
 print(*idx)
 
 # %%
@@ -523,6 +532,23 @@ lof_model  = LocalOutlierFactor(n_neighbors  = 5,
 LOF_labels = lof_model.fit_predict(prox_mat)     # predict the labels (1 inlier, -1 outlier) of X according to LOF
 LOF_values     = lof_model.negative_outlier_factor_
 np.where(LOF_labels == -1)[0].shape
+
+# %%
+np.min(LOF_values)
+
+# %%
+plt.hist(LOF_values, bins=100)
+plt.title('Local Outlier Factor')
+plt.xlabel('LOF')
+plt.ylabel('Frequency')
+plt.show()
+
+# %%
+plt.plot(LOF_values)
+plt.title('Local Outlier Factor')
+plt.xlabel('Data points')
+plt.ylabel('LOF')
+plt.show()
 
 # %%
 PCA_tSNE_visualization(df, 2, LOF_labels, ['red', 'gray'])
@@ -606,6 +632,13 @@ def compute_cof(avg_shortest_paths, indices, k):
 
 # %%
 cof_scores = compute_cof(avg_shortest_path, idx, k)
+
+# %%
+plt.hist(cof_scores, bins=100)
+plt.title('COF scores')
+plt.xlabel('COF')
+plt.ylabel('Frequency')
+plt.show()
 
 # %%
 sorted_cof_idx = np.argsort(cof_scores)[::-1]
@@ -1074,6 +1107,13 @@ prox_centers.shape
 prox_centers = np.min(prox_centers, axis=1) # we don't need to use labels, as by definition an element's medoid is the closest to it
 
 # %%
+plt.hist(prox_centers, bins=100)
+plt.title('Distance to medoids')
+plt.xlabel('Distance')
+plt.ylabel('Frequency')
+plt.show()
+
+# %%
 prox_centers.shape
 
 # %% [markdown]
@@ -1213,6 +1253,14 @@ df_reconstructed[bool_cols] = df_reconstructed[bool_cols].astype(bool)
 # reconstruction error with gower distance
 
 reconstruction_error = np.array([gower_distance(df.iloc[i], df_reconstructed.iloc[i], metrics) for i in range(df.shape[0])])
+
+# %%
+plt.hist(reconstruction_error, bins=100)
+plt.title('Reconstruction error')
+plt.xlabel('Error')
+plt.ylabel('Frequency')
+plt.xlim(0, 0.25)
+plt.show()
 
 # %%
 n = 0.05
