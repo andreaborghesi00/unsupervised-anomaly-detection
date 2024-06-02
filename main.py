@@ -27,6 +27,7 @@ import threading
 import queue
 import concurrent.futures
 import gc
+from itertools import combinations
 
 # %%
 
@@ -86,6 +87,33 @@ def PCA_tSNE_visualization(data2visualize, NCOMP, LABELS, PAL='viridis'):
   ax2.title.set_text('tSNE')
   plt.grid()
   plt.show()
+
+
+# %%
+def plot_float_comb_dimensions(df, labels, palette):
+    """
+    Plot the combination of all float columns of the dataset with the specified labels.
+
+    Parameters:
+    df (pandas DataFrame): The input dataset.
+    labels (array-like): The labels of the dataset.
+    palette (list): The colors to use for the labels.
+    """
+    float_cols = df.select_dtypes(exclude=['bool']).columns
+    df_float = df[float_cols]
+
+    float_comb = combinations(range(df_float.shape[1]), 2)
+    fig = plt.figure(figsize=(40, 20))
+    ax = fig.add_subplot(111)
+    for i, (feat1, feat2) in enumerate(float_comb):
+        ax = fig.add_subplot(3, 5, i+1)
+        sns.scatterplot(x = df_float[float_cols[feat1]], y = df_float[float_cols[feat2]], hue=labels, palette=palette)
+        ax.set_xlabel(f'Dimension {feat1}')
+        ax.set_ylabel(f'Dimension {feat2}')
+        ax.legend()
+    plt.show()
+    
+
 
 # %% [markdown]
 # # Data cleaning
@@ -467,14 +495,68 @@ NN_labels = np.ones(df.shape[0])
 NN_labels[anomalies] = -1
 PCA_tSNE_visualization(df, 2, NN_labels, ['red', 'gray'])
 
+# %%
+plot_float_comb_dimensions(df, knee_labels, ['red', 'gray'])
 
 # %% [markdown]
 # It seems to work best when k is low, but in any case the results don't seem that great. This might be because we're dealing with a high number of dimensions with respect to the number of samples available.
 
 # %% [markdown]
-# ### Density Based [TODO]
+# ----
+# ### Density Based: LOF
 
 # %% [markdown]
+# In this context, applying a density based approach is quite a risk, as density-based approaches tend to be very sensitive to high-dimensionality, significantly more than distance based ones. This is because density based approaches rely on accurate local distance measurements which tends to lose information as the data becomes more sparse as the dimensionality rises.
+
+# %%
+# Apply the algorithm
+from sklearn.neighbors import LocalOutlierFactor
+
+lof_model  = LocalOutlierFactor(n_neighbors  = 5,
+                                metric='precomputed',
+                                contamination = 0.05)
+
+LOF_labels = lof_model.fit_predict(prox_mat)     # predict the labels (1 inlier, -1 outlier) of X according to LOF
+LOF_values     = lof_model.negative_outlier_factor_
+np.where(LOF_labels == -1)[0].shape
+
+# %%
+PCA_tSNE_visualization(df, 2, LOF_labels, ['red', 'gray'])
+
+
+# %% [markdown]
+# Just with a glance of PCA and tSNE visualization, we can say that it has not found many proper outliers. To further confirm this hypothesis we can explore more thoroughly some non-transformed dimensions.
+
+# %%
+def plot_kj_dimension(df, labels, feat1, feat2, palette):
+    """
+    Plot the k-th dimension against the j-th dimension of the dataset with the specified labels.
+
+    Parameters:
+    df (pandas DataFrame): The input dataset.
+    labels (array-like): The labels of the dataset.
+    k (int): The dimension to plot.
+    palette (list): The colors to use for the labels.
+    """
+    fig = plt.figure(figsize=(8, 6))
+    ax = fig.add_subplot(111)
+    sns.scatterplot(x = df[df.columns[feat1]], y = df[df.columns[feat2]], hue=labels, palette=palette)
+    ax.set_xlabel(f'Dimension {feat1}')
+    ax.set_ylabel(f'Dimension {feat2}')
+    ax.legend()
+    plt.show()
+
+
+
+# %% [markdown]
+# For the sake of visualization we're plotting float columns only, and although they are a section of the dataset, by plotting every possible combination we can clearly see the density based method is, as a matter of fact, shit.
+
+# %%
+plot_float_comb_dimensions(df, LOF_labels, ['red', 'gray'])
+
+
+# %% [markdown]
+# ----
 # ## Clustering based
 
 # %% [markdown]
@@ -941,6 +1023,9 @@ KM1_labels[idx_to_exclude] = -1
 PCA_tSNE_visualization(df, 2, KM1_labels, ['red', 'gray'])
 
 # %%
+plot_float_comb_dimensions(df, KM1_labels, ['red', 'gray'])
+
+# %%
 # Method 2: thresholding
 
 median = np.median(prox_centers)
@@ -955,6 +1040,9 @@ idx_to_exclude.shape
 KM2_labels = np.ones(df.shape[0])
 KM2_labels[idx_to_exclude] = -1
 PCA_tSNE_visualization(df, 2, KM2_labels, ['red', 'gray'])
+
+# %%
+plot_float_comb_dimensions(df, KM2_labels, ['red', 'gray'])
 
 # %%
 # Method 3: Elbow method
@@ -979,25 +1067,10 @@ KM3_labels[idx_to_exclude] = -1
 PCA_tSNE_visualization(df, 2, KM3_labels, ['red', 'gray'])
 
 # %%
+plot_float_comb_dimensions(df, KM3_labels, ['red', 'gray'])
+
+# %%
 # TODO: move cells to have the analysis of the naive kmeans and the elbow method together and then the gower distance kmeans and the elbow method together
-
-# %% [markdown]
-# ----
-# ### Investigation with LOF
-
-# %%
-# Apply the algorithm
-from sklearn.neighbors import LocalOutlierFactor
-
-lof_model  = LocalOutlierFactor(n_neighbors  = neighborhood_order,
-                                metric='precomputed',
-                                contamination = 0.05)
-LOF_labels = lof_model.fit_predict(prox_mat)     # predict the labels (1 inlier, -1 outlier) of X according to LOF
-LOF_values     = lof_model.negative_outlier_factor_
-np.where(LOF_labels == -1)[0].shape
-
-# %%
-PCA_tSNE_visualization(df, 2, LOF_labels, ['red', 'gray'])
 
 # %% [markdown]
 # # Detections coherence
