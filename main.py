@@ -232,13 +232,15 @@ plt.show()
 
 
 # %% [markdown]
-# # Anomaly detection
+# ----
+# # <center>Anomaly detection
+# ----
 
 # %% [markdown]
-# ## Proximity Based
+# ## <center>Proximity Based
 
 # %% [markdown]
-# ### Proximity Matrix for mixed data-types
+# #### <center>Proximity Matrix for mixed data-types
 # We should store these functions in a library
 
 # %%
@@ -392,7 +394,7 @@ print(np.allclose(np.diag(prox_mat), 0))
 
 # %% [markdown]
 # ----
-# ### Distance Based: NN Approach
+# ### <center>Distance Based: NN Approach
 
 # %%
 # Apply the algorithm
@@ -510,7 +512,7 @@ plot_float_comb_dimensions(df, knee_labels, ['red', 'gray'])
 
 # %% [markdown]
 # ----
-# ### Density Based: LOF
+# ### <center>Density Based: LOF
 
 # %% [markdown]
 # In this context, applying a density based approach is quite a risk, as density-based approaches tend to be very sensitive to high-dimensionality, significantly more than distance based ones. This is because density based approaches rely on accurate local distance measurements which tends to lose information as the data becomes more sparse as the dimensionality rises.
@@ -659,7 +661,8 @@ plot_float_comb_dimensions(df, COF_labels, ['red', 'gray'])
 
 # %% [markdown]
 # ----
-# ## Clustering based
+# ## <center>Clustering based
+# ----
 
 # %% [markdown]
 # ### Prototype based clusters: Naive K-Means++
@@ -1179,9 +1182,11 @@ plot_float_comb_dimensions(df, KM3_labels, ['red', 'gray'])
 
 # %% [markdown]
 # ----
-# ## Reconstruction Based: PCA
+# ## <center>Reconstruction Based
+# ---- 
 
-# %%
+# %% [markdown]
+# ### <center>PCA
 
 # %%
 def pca_reconstruction_error(data, n_components):
@@ -1267,13 +1272,139 @@ PCA_tSNE_visualization(df, 2, PCA_labels, ['red', 'gray'])
 # %%
 plot_float_comb_dimensions(df, PCA_labels, ['red', 'gray'])
 
+
 # %% [markdown]
 # ----
-# # Detections coherence
+# ### <center>Encoder-Decoder
 
 # %%
-y1 = COF_labels
-y2 = NN_labels
+def encoder_decoder_reconstruction_error(data, encoder, decoder):
+    """
+    Calculate the reconstruction error between the original data and the reconstructed data.
+
+    Parameters:
+    data (pandas DataFrame): The original data.
+    encoder (keras Model): The encoder model.
+    decoder (keras Model): The decoder model.
+
+    Returns:
+    float: The average reconstruction error.
+    """
+    reconstructed = decoder.predict(encoder.predict(data))
+    bool_cols_idx = [df.columns.get_loc(col) for col in bool_cols]
+    reconstructed[:, bool_cols_idx] = np.round(reconstructed[:, bool_cols_idx])
+
+    df_reconstructed = pd.DataFrame(reconstructed, columns=df.columns)
+    df_reconstructed[bool_cols] = df_reconstructed[bool_cols].astype(bool)
+
+    metrics = {np.bool_: 'hamming', np.float64: 'euclidean', float: 'euclidean'}
+    error = np.array([gower_distance(df.iloc[i], df_reconstructed.iloc[i], metrics) for i in range(df.shape[0])])
+    
+    return np.sum(error)/reconstructed.shape[0]
+
+
+# %%
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import DataLoader, TensorDataset
+from tqdm import tqdm
+
+class Autoencoder(nn.Module):
+    def __init__(self, input_dim, encoding_dim):
+        super(Autoencoder, self).__init__()
+        self.encoder = nn.Sequential(
+            nn.Linear(input_dim, encoding_dim),
+            nn.ReLU()
+        )
+        self.decoder = nn.Sequential(
+            nn.Linear(encoding_dim, input_dim),
+            nn.Sigmoid()
+        )
+
+    def forward(self, x):
+        encoded = self.encoder(x)
+        decoded = self.decoder(encoded)
+        return decoded
+
+def train_autoencoder(autoencoder, dataloader, epochs, device):
+    criterion = nn.MSELoss()
+    optimizer = optim.Adam(autoencoder.parameters(), lr=0.001)
+
+    for epoch in range(epochs):
+        for data in dataloader:
+            data = data[0].to(device)
+            data = data.float()
+            optimizer.zero_grad()
+            reconstructed = autoencoder(data)
+            loss = criterion(reconstructed, data)
+            loss.backward()
+            optimizer.step()
+
+def calculate_reconstruction_error(data, reconstructed_data, bool_cols, metrics):
+    reconstructed_data[bool_cols] = np.round(reconstructed_data[bool_cols]).astype(bool)
+    
+    data = data.astype(np.float32)
+    reconstructed_data = reconstructed_data.astype(np.float32)
+    
+    error = np.array([gower_distance(data.iloc[i], reconstructed_data.iloc[i], metrics) for i in range(data.shape[0])])
+    return error
+
+
+bool_data = df[bool_cols].values.astype(float)
+float_data = df.drop(columns=bool_cols).values.astype(float)
+
+bool_tensor = torch.tensor(bool_data, dtype=torch.float32)
+float_tensor = torch.tensor(float_data, dtype=torch.float32)
+tensor_data = torch.cat((bool_tensor, float_tensor), dim=1)
+
+dataset = TensorDataset(tensor_data)
+dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
+
+# Create and train the autoencoder
+input_dim = tensor_data.shape[1]
+encoding_dim = 6
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+autoencoder = Autoencoder(input_dim, encoding_dim).to(device)
+train_autoencoder(autoencoder, dataloader, epochs=100, device=device)
+
+# Reconstruct the data using the autoencoder
+autoencoder.eval()
+with torch.no_grad():
+    reconstructed_data = autoencoder(tensor_data.to(device)).cpu().numpy()
+
+reconstructed_df = pd.DataFrame(reconstructed_data, columns=df.columns)
+
+# Calculate reconstruction error
+metrics = {np.bool_: 'hamming', np.float64: 'euclidean', float: 'euclidean'}
+reconstruction_error = calculate_reconstruction_error(df, reconstructed_df, bool_cols, metrics)
+
+
+# %%
+
+# Identify anomalies based on reconstruction error
+n = 0.05
+n_samples_to_exclude = np.ceil(n * df.shape[0])
+idx_sorted_reconstruction = np.argsort(reconstruction_error)[::-1]
+idx_to_exclude = idx_sorted_reconstruction[:int(n_samples_to_exclude)]
+
+autoencoder_labels = np.ones(df.shape[0])
+autoencoder_labels[idx_to_exclude] = -1
+
+PCA_tSNE_visualization(df, 2, autoencoder_labels, ['red', 'gray'])
+plot_float_comb_dimensions(df, autoencoder_labels, ['red', 'gray'])
+
+
+# %% [markdown]
+# ----
+# # <center>Detections coherence
+
+# %%
+y1 = autoencoder_labels
+y2 = KM1_labels
 
 from sklearn import metrics
 
@@ -1298,3 +1429,35 @@ plt.grid()
 plt.show()
 
 # %%
+# find all the points that are outliers in all the methods
+methods = [KM1_labels, autoencoder_labels, NN_labels]
+
+def common_outliers(methods):
+    common_outliers = methods[0]
+    for method in methods[1:]:
+        common_outliers = np.where(np.logical_and(common_outliers == -1, method == -1), -1, 1)
+
+
+    return common_outliers
+
+common_outliers_labels = common_outliers(methods)
+print(f'Number of common outliers: {np.sum(common_outliers_labels == -1)}\n\n')
+
+PCA_tSNE_visualization(df, 2, common_outliers_labels, ['red', 'gray'])
+plot_float_comb_dimensions(df, common_outliers_labels, ['red', 'gray'])
+
+# %%
+methods = [KM1_labels, autoencoder_labels, NN_labels, PCA_labels, LOF_labels]
+
+def sum_outliers(methods):
+    sum_outliers = methods[0]
+    for method in methods[1:]:
+        sum_outliers = np.where(np.logical_or(sum_outliers == -1, method == -1), -1, 1)
+
+    return sum_outliers
+
+sum_outliers_labels = sum_outliers(methods)
+print(f'Number of sum outliers: {np.sum(sum_outliers_labels == -1)}\n\n')
+
+PCA_tSNE_visualization(df, 2, sum_outliers_labels, ['red', 'gray'])
+plot_float_comb_dimensions(df, sum_outliers_labels, ['red', 'gray'])
