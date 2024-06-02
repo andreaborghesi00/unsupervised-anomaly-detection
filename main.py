@@ -554,6 +554,69 @@ def plot_kj_dimension(df, labels, feat1, feat2, palette):
 # %%
 plot_float_comb_dimensions(df, LOF_labels, ['red', 'gray'])
 
+# %% [markdown]
+# ### Graph Based: COF
+# COF is designed to identify outliers based on the connectivity structure, which can be more robust in high-dimensional spaces or in datasets with complex structures where traditional distance-based methods might struggle. By leveraging graph theory, COF can capture more nuanced relationships between points that pure distance metrics might miss.
+
+# %%
+nn = NearestNeighbors(n_neighbors=5, metric='precomputed')
+nn.fit(prox_mat)
+dist, idx = nn.kneighbors()
+
+# %%
+from scipy.sparse.csgraph import shortest_path
+from scipy.sparse import csr_matrix
+
+adjacency_matrix = np.full((N, N), np.inf)
+np.fill_diagonal(adjacency_matrix, 0) # diagonal is 0
+for i, neighbour in enumerate(idx):
+        adjacency_matrix[i, neighbour] = dist[i, np.where(indices[i] == neighbour)]
+adjacency_matrix[adjacency_matrix == np.inf] = 1000 # ensures connectivity for the shortest path algorithm
+
+# %%
+shortest_paths = shortest_path(adjacency_matrix, directed=False) # it takes around 6 minutes on a i9-9900K
+
+# %%
+# check if there are inf values
+np.any(np.isinf(shortest_paths))
+
+# %%
+avg_shortest_path = np.mean(shortest_paths, axis=1)
+avg_shortest_path
+
+
+# %%
+def compute_cof(avg_shortest_paths, indices, k):
+    cof_scores = np.zeros_like(avg_shortest_paths)
+    for i in range(len(avg_shortest_paths)):
+        neighbors = indices[i]
+        neighbor_avg_paths = avg_shortest_paths[neighbors]
+        cof_scores[i] = avg_shortest_paths[i] / (np.mean(neighbor_avg_paths) if np.mean(neighbor_avg_paths) != 0 else 1)
+    return cof_scores
+
+
+# %%
+cof_scores = compute_cof(avg_shortest_path, idx, k)
+
+# %%
+print(*cof_scores)
+
+# %%
+# top 5% of the 
+n = 0.05
+n_samples_to_exclude = np.ceil(n*df.shape[0])
+idx_sorted_cof = np.argsort(cof_scores)[::-1] # sort in descending order
+idx_to_exclude = idx_sorted_cof[:int(n_samples_to_exclude)]
+idx_to_exclude.shape, idx_to_exclude
+
+# %%
+COF_labels = np.ones(df.shape[0])
+COF_labels[idx_to_exclude] = -1
+PCA_tSNE_visualization(df, 2, COF_labels, ['red', 'gray'])
+
+# %%
+plot_float_comb_dimensions(df, COF_labels, ['red', 'gray'])
+
 
 # %% [markdown]
 # ----
@@ -1008,9 +1071,9 @@ prox_centers.shape
 # Now we can handle what is an outlier in 3 main ways: decide a percentage of outliers and exclude the $x\%$ furthest elements from their medoids (1), use a threshold $\delta$ and exclude the elements that are further than $\delta$ from their medoid (2), or use the knee method on the ordered elements per distance from their medoids (3)
 
 # %%
-# Method 1: exclude 2% of the data
+# Method 1: exclude 5% of the data
 
-n = 0.02
+n = 0.05
 n_samples_to_exclude = np.ceil(n*df.shape[0])
 idx_sorted_prox = np.argsort(prox_centers)[::-1] # sort in descending order
 idx_to_exclude = idx_sorted_prox[:int(n_samples_to_exclude)]
@@ -1073,13 +1136,20 @@ plot_float_comb_dimensions(df, KM3_labels, ['red', 'gray'])
 # TODO: move cells to have the analysis of the naive kmeans and the elbow method together and then the gower distance kmeans and the elbow method together
 
 # %% [markdown]
+# ----
+# ## Reconstruction Based: PCA
+
+# %% [markdown]
+# ----
 # # Detections coherence
 
 # %%
-y1 = NN_labels
-y2 = LOF_labels
+y1 = COF_labels
+y2 = KM3_labels
 
 from sklearn import metrics
+
+print(f"Shapes: {-np.sum(y1[np.where(y1==-1)])}, {-np.sum(y2[np.where(y2==-1)])}")
 print(f"Homogeneity: {metrics.homogeneity_score(y1, y2):.3f}")
 print(f"Completeness: {metrics.completeness_score(y1, y2):.3f}")
 print(f"V-measure: {metrics.v_measure_score(y1, y2):.3f}")
@@ -1098,3 +1168,5 @@ plt.title('Match on outlier detection between NN and LOF (Rand index = %.2f)' %R
 plt.legend(["NN", "LOF"])
 plt.grid()
 plt.show()
+
+# %%
