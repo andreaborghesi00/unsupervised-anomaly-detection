@@ -517,12 +517,6 @@ plot_float_comb_dimensions(df, knee_labels, ['red', 'gray'], legend=['Normal', '
 # In this context, applying a density based approach is quite a risk, as density-based approaches tend to be very sensitive to high-dimensionality, significantly more than distance based ones. This is because density based approaches rely on accurate local distance measurements which tends to lose information as the data becomes more sparse as the dimensionality rises.
 
 # %%
-reduced_data = PCA(n_components=4).fit_transform(df)
-
-# %%
-reduced_prox_mat = proximity_matrix_symmetric(pd.DataFrame(reduced_data), {np.bool_: 'hamming', np.float64: 'euclidean', float: 'euclidean'})
-
-# %%
 # Apply the algorithm
 from sklearn.neighbors import LocalOutlierFactor
 
@@ -829,8 +823,8 @@ def kmeans_gower_revisited(data, n_clusters, max_iter=300, random_state=None, ke
 l, c, i = kmeans_gower(df, 10, max_iter=10)
 
 # %%
-# %%time
-lr, cr, ir =kmeans_gower_revisited(df, 10, max_iter=10, keep_types=True)
+lr, cr, ir =kmeans_gower_revisited(df, 4, max_iter=10, keep_types=True)
+lr, cr, ir
 
 # %%
 # kmeans++ clustering
@@ -838,7 +832,10 @@ nk = 4
 kmeans = KMeans(n_clusters=nk, init='k-means++', max_iter=1000, ).fit(df)
 labels = kmeans.labels_
 # kmeans++ visualization
-PCA_tSNE_visualization(df, nk, labels, 'viridis')
+PCA_tSNE_visualization(df, 4, lr, 'viridis')
+plot_float_comb_dimensions(df, lr, 'viridis')
+
+# %%
 
 # %% [markdown]
 # #### Finding the optimal number of clusters: Elbow method
@@ -896,7 +893,7 @@ res_queue = queue.Queue()
 threads = []
 
 for k in r:
-    t = threading.Thread(target=kmeans_gower_revisited, args=(df, k, None, None, 100, None, False, res_queue))
+    t = threading.Thread(target=kmeans_gower_revisited, args=(df, k, 100, None, False, res_queue))
     threads.append(t)
     if len(threads) % 8 == 0:
         for t in threads:
@@ -987,7 +984,7 @@ def elbow_method_run_gower_revisited(data, k_range, result_queue, max_iter=100, 
     threads = []
     
     for k in k_range:
-        t = threading.Thread(target=kmeans_gower_revisited, args=(data, k, None, None, max_iter, None, False, local_queue))
+        t = threading.Thread(target=kmeans_gower_revisited, args=(data, k, max_iter, None, False, local_queue))
         threads.append(t)
 
         if len(threads) % max_workers == 0:
