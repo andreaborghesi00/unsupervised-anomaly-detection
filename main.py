@@ -37,9 +37,6 @@ from sklearn.neighbors import NearestNeighbors
 from itertools import combinations
 
 # %%
-df
-
-# %%
 
 # Load the data
 df = pd.read_csv('datasets/data.csv', sep=';', index_col='Row')
@@ -347,50 +344,20 @@ print(np.allclose(np.diag(prox_mat), 0))
 # print(np.allclose(np.diag(prox_mat_mt), 0))
 
 # %%
-# Visualization
-# -------------
-# Choose your preferred style: https://matplotlib.org/stable/gallery/style_sheets/style_sheets_reference.html
-
-
 plt.style.use('default')
 
-
-
 N, M = prox_mat.shape
-fig1 = plt.figure(figsize=(30,10))
-fig1.suptitle('Visual inspection of proximity matrix', fontsize=20)
-
-
-# Plot 1: 2D image of the entire dataset
-ax1 = fig1.add_subplot(121)
-im1 = ax1.imshow(df[float_cols], interpolation='nearest', aspect='auto', cmap='seismic')
-
-# create an axes on the right side of ax. The width of cax will be 5%
-# of ax and the padding between cax and ax will be fixed at 0.05 inch.
-divider = make_axes_locatable(ax1)
-cax = divider.append_axes("right", size="5%", pad=0.05)
-plt.colorbar(im1, cax=cax)
-
-ax1.set_xlabel('Attributes', fontsize=16)
-ax1.set_xticks(np.arange(0, M, step=1))
-ax1.set_ylabel('Observations', fontsize=16)
-ax1.set_yticks(np.arange(0, N, step=10))
-ax1.title.set_text('Dataset')
-
+fig1 = plt.figure(figsize=(15,10))
 
 # Plot 2: proximity matrix
-ax2 = fig1.add_subplot(122)
-im2 = ax2.imshow(prox_mat, interpolation='nearest', aspect='auto', cmap='coolwarm')
+plt.imshow(prox_mat, interpolation='nearest', aspect='auto', cmap='coolwarm')
+plt.colorbar()
 
-divider = make_axes_locatable(ax2)
-cax = divider.append_axes("right", size="5%", pad=0.05)
-plt.colorbar(im2, cax=cax)
-
-ax2.set_xlabel('Observations', fontsize=16)
-ax2.set_xticks(np.arange(0, N, step=10))
-ax2.set_ylabel('Observations', fontsize=16)
-ax2.set_yticks(np.arange(0, N, step=10))
-ax2.title.set_text('Proximity matrix')
+plt.xlabel('Observations', fontsize=16)
+plt.xticks(np.arange(0, N, step=10))
+plt.ylabel('Observations', fontsize=16)
+plt.yticks(np.arange(0, N, step=10))
+plt.title('Proximity matrix')
 
 plt.show()
 
@@ -441,7 +408,7 @@ ax1 = fig3.add_subplot(121)
 plt.plot(distances[:,-1])
 ax1.set_xlabel('Data points', fontsize=10)
 ax1.set_xticks(np.arange(0, N, step=1000))
-ax1.set_ylabel('Distances\n(not sorted, %s)' % distance_metric, fontsize=10)
+ax1.set_ylabel('Distances\n(not sorted, gower distance)', fontsize=10)
 # ax1.title.set_text('Proximity matrix (%s distance)' % distance_metric)
 plt.grid()
 
@@ -592,13 +559,32 @@ plot_float_comb_dimensions(df, LOF_labels, ['red', 'gray'])
 
 # %% [markdown]
 # ----
+# ### <center>DBSCAN
+
+# %%
+# dbscan
+from sklearn.cluster import DBSCAN
+
+dbscan = DBSCAN(eps=0.125, min_samples=5, metric='precomputed')
+DBSCAN_labels = dbscan.fit_predict(prox_mat)
+DBSCAN_labels[np.where(DBSCAN_labels >= 0)[0]] = 1
+print(f'Number of outliers: {np.where(DBSCAN_labels == -1)[0].shape[0]}')
+
+PCA_tSNE_visualization(df, 2, DBSCAN_labels, ['red', 'gray'])
+
+plot_float_comb_dimensions(df, DBSCAN_labels, ['red', 'gray'])
+
+# %% [markdown]
+# ----
 # ### <center>Graph Based: COF
 # COF is designed to identify outliers based on the connectivity structure, which can be more robust in high-dimensional spaces or in datasets with complex structures where traditional distance-based methods might struggle. By leveraging graph theory, COF can capture more nuanced relationships between points that pure distance metrics might miss.
 
 # %%
-nn = NearestNeighbors(n_neighbors=5, metric='precomputed')
-nn.fit(prox_mat)
-dist, idx = nn.kneighbors()
+
+# %%
+near_neigh = NearestNeighbors(n_neighbors=5, metric='precomputed')
+near_neigh.fit(prox_mat)
+dist, idx = near_neigh.kneighbors()
 
 # %%
 from scipy.sparse.csgraph import shortest_path
@@ -1089,6 +1075,10 @@ print(f'The most recurrent optimal number of clusters is {most_recurrent_k}')
 labels, medoids, inertia = kmeans_gower_revisited(df, 5, max_iter=100, keep_types=True)
 
 # %%
+# silhouette score
+silhouette_score(prox_mat, labels, metric='precomputed')
+
+# %%
 PCA_tSNE_visualization(df, 5, labels, 'viridis')
 
 # %%
@@ -1310,7 +1300,7 @@ def train_autoencoder(autoencoder, dataloader, epochs, device):
     criterion = nn.MSELoss()
     optimizer = optim.Adam(autoencoder.parameters(), lr=0.001)
 
-    for epoch in range(epochs):
+    for epoch in tqdm(range(epochs)):
         for data in dataloader:
             data = data[0].to(device)
             data = data.float()
@@ -1320,13 +1310,13 @@ def train_autoencoder(autoencoder, dataloader, epochs, device):
             loss.backward()
             optimizer.step()
 
-def calculate_reconstruction_error(data, reconstructed_data, bool_cols, metrics):
+def calculate_reconstruction_error(data, reconstructed_data, bool_cols, metrics_gower):
     reconstructed_data[bool_cols] = np.round(reconstructed_data[bool_cols]).astype(bool)
     
     data = data.astype(np.float32)
     reconstructed_data = reconstructed_data.astype(np.float32)
     
-    error = np.array([gower_distance(data.iloc[i], reconstructed_data.iloc[i], metrics) for i in range(data.shape[0])])
+    error = np.array([gower_distance(data.iloc[i], reconstructed_data.iloc[i], metrics_gower) for i in range(data.shape[0])])
     return error
 
 
@@ -1352,8 +1342,8 @@ with torch.no_grad():
 
 reconstructed_df = pd.DataFrame(reconstructed_data, columns=df.columns)
 
-metrics = {np.bool_: 'hamming', np.float64: 'euclidean', float: 'euclidean'}
-reconstruction_error = calculate_reconstruction_error(df, reconstructed_df, bool_cols, metrics)
+metrics_gower = {np.bool_: 'hamming', np.float64: 'euclidean', float: 'euclidean'}
+reconstruction_error = calculate_reconstruction_error(df, reconstructed_df, bool_cols, metrics_gower)
 
 
 # %%
@@ -1373,33 +1363,7 @@ plot_float_comb_dimensions(df, autoencoder_labels, ['red', 'gray'])
 
 # %% [markdown]
 # ----
-# # <center>Detections coherence
-
-# %%
-y1 = autoencoder_labels
-y2 = KM1_labels
-
-print(f"Shapes: {-np.sum(y1[np.where(y1==-1)])}, {-np.sum(y2[np.where(y2==-1)])}")
-print(f"Homogeneity: {metrics.homogeneity_score(y1, y2):.3f}")
-print(f"Completeness: {metrics.completeness_score(y1, y2):.3f}")
-print(f"V-measure: {metrics.v_measure_score(y1, y2):.3f}")
-R = metrics.adjusted_rand_score(y1, y2)
-print(f"Adjusted Rand Index: {R:.3f}")
-print("Adjusted Mutual Information:" f" {metrics.adjusted_mutual_info_score(y1, y2):.3f}")
-
-
-fig20 = plt.figure('Comparison spotted outliers', figsize=(40,2))
-mask1 = (y1 == -1)
-mask2 = (y2 == -1)
-plt.scatter(np.where(mask1)[0], y1[mask1], color='blue', marker="o", label='NN')
-plt.scatter(np.where(mask2)[0], y2[mask2], color='red', marker="s", label='LOF')
-
-plt.xlabel('Data points')
-plt.ylabel('Predicted label \n (outlier=-1)', fontsize=10)
-plt.title('Match on outlier detection between NN and LOF (Rand index = %.2f)' %R)
-plt.legend(["NN", "LOF"])
-plt.grid()
-plt.show()
+# ## <center>Ensembles
 
 # %%
 # find all the points that are outliers in all the methods
@@ -1434,3 +1398,85 @@ print(f'Number of sum outliers: {np.sum(sum_outliers_labels == -1)}\n\n')
 
 PCA_tSNE_visualization(df, 2, sum_outliers_labels, ['red', 'gray'])
 plot_float_comb_dimensions(df, sum_outliers_labels, ['red', 'gray'])
+
+# %% [markdown]
+# ----
+# # <center>Detections coherence
+
+# %%
+import sklearn.metrics as metrics
+
+# %%
+y1 = DBSCAN_labels
+y2 = NN_labels
+
+print(f"Shapes: {-np.sum(y1[np.where(y1==-1)])}, {-np.sum(y2[np.where(y2==-1)])}")
+print(f"Homogeneity: {metrics.homogeneity_score(y1, y2):.3f}")
+print(f"Completeness: {metrics.completeness_score(y1, y2):.3f}")
+print(f"V-measure: {metrics.v_measure_score(y1, y2):.3f}")
+R = metrics.adjusted_rand_score(y1, y2)
+print(f"Adjusted Rand Index: {R:.3f}")
+print("Adjusted Mutual Information:" f" {metrics.adjusted_mutual_info_score(y1, y2):.3f}")
+
+
+fig20 = plt.figure('Comparison spotted outliers', figsize=(40,2))
+mask1 = (y1 == -1)
+mask2 = (y2 == -1)
+plt.scatter(np.where(mask1)[0], y1[mask1], color='blue', marker="o", label='NN')
+plt.scatter(np.where(mask2)[0], y2[mask2], color='red', marker="s", label='LOF')
+
+plt.xlabel('Data points')
+plt.ylabel('Predicted label \n (outlier=-1)', fontsize=10)
+plt.title('Match on outlier detection between NN and LOF (Rand index = %.3f)' %R)
+plt.legend(["NN", "LOF"])
+plt.grid()
+plt.show()
+
+# %% [markdown]
+# # <center>Confronting silhouettes
+
+# %%
+labels, centroids, inertia = kmeans_gower_revisited(df, 5, max_iter=100, keep_types=True)
+
+# %%
+silhouette_score(prox_mat, labels, metric='precomputed')
+
+
+# %%
+def silhoutte_score_anomalies(pmat, labels, anomalies):
+    anomalies_idx = np.where(anomalies == -1)[0]
+    labels_new = labels.copy()
+    labels_new[anomalies_idx] = -1
+    return silhouette_score(pmat, labels_new, metric='precomputed')
+
+
+
+# %%
+def silhouette_score_without_anomalies(data, anomalies):
+    anomalies_idx = np.where(anomalies == -1)[0]
+    data_new = data.copy()
+    data_new = data_new.drop(anomalies_idx)
+    l, c, i = kmeans_gower_revisited(data_new, 5, max_iter=100, keep_types=True)
+    return silhouette_score(data_new, l, metric='euclidean')
+
+
+# %%
+outlier_detection_dict = {
+    'KM1': KM1_labels,
+    'KM2': KM2_labels,
+    'KM3': KM3_labels,
+    'PCA': PCA_labels,
+    'LOF': LOF_labels,
+    'NN': NN_labels,
+    'DBSCAN': DBSCAN_labels,
+    # 'COF': COF_labels,
+    'common_outliers': common_outliers_labels,
+    'sum_outliers': sum_outliers_labels,
+    'autoencoder': autoencoder_labels
+}
+
+# %%
+{key: silhouette_score_without_anomalies(df, value) for key, value in outlier_detection_dict.items()}
+
+# %%
+{key: silhoutte_score_anomalies(prox_mat, labels, value) for key, value in outlier_detection_dict.items()}
