@@ -44,7 +44,7 @@ df.head(3)
 
 
 # %%
-def PCA_tSNE_visualization(data2visualize, NCOMP, LABELS, PAL='viridis'):
+def PCA_tSNE_visualization(data2visualize, NCOMP, LABELS, PAL='viridis', title_addition='', legend=None):
 
   '''
   INPUT
@@ -76,7 +76,7 @@ def PCA_tSNE_visualization(data2visualize, NCOMP, LABELS, PAL='viridis'):
 
   # Plots
   fig1000 = plt.figure(figsize=(10,5))
-  fig1000.suptitle('Dimensionality reduction of the dataset', fontsize=16)
+  fig1000.suptitle(f'Reduced dataset - {title_addition}', fontsize=16)
 
 
   # Plot 1: 2D image of the entire dataset
@@ -85,6 +85,8 @@ def PCA_tSNE_visualization(data2visualize, NCOMP, LABELS, PAL='viridis'):
   ax1.set_xlabel('Dimension 1', fontsize=10)
   ax1.set_ylabel('Dimension 2', fontsize=10)
   ax1.title.set_text('PCA')
+  if legend is not None:
+    ax1.legend(legend)
   plt.grid()
 
   ax2= fig1000.add_subplot(122)
@@ -92,12 +94,14 @@ def PCA_tSNE_visualization(data2visualize, NCOMP, LABELS, PAL='viridis'):
   ax2.set_xlabel('Dimension 1', fontsize=10)
   ax2.set_ylabel('Dimension 2', fontsize=10)
   ax2.title.set_text('tSNE')
+  if legend is not None:
+    ax2.legend(legend)
   plt.grid()
   plt.show()
 
 
 # %%
-def plot_float_comb_dimensions(df, labels, palette):
+def plot_float_comb_dimensions(df, labels, palette, legend=None):
     """
     Plot the combination of all float columns of the dataset with the specified labels.
 
@@ -117,7 +121,8 @@ def plot_float_comb_dimensions(df, labels, palette):
         sns.scatterplot(x = df_float[float_cols[feat1]], y = df_float[float_cols[feat2]], hue=labels, palette=palette)
         ax.set_xlabel(f'Dimension {feat1}')
         ax.set_ylabel(f'Dimension {feat2}')
-        ax.legend()
+        if legend is not None:
+            ax.legend(legend)
     plt.show()
     
 
@@ -222,22 +227,36 @@ def proximity_feat(x, y, metric):
     if(type(x) != type(y)):
         raise ValueError(f'The two inputs must be of the same type, got {type(x)} and {type(y)}')
 
-    if metric == 'euclidean':
-        return np.linalg.norm(x - y)
-    elif metric == 'cosine':
-        return np.dot(x, y) / (np.linalg.norm(x) * np.linalg.norm(y))
-    elif metric == 'manhattan':
-        return np.sum(np.abs(x - y))
-    elif metric == 'jaccard':
-        return 1 - np.sum(np.minimum(x, y)) / np.sum(np.maximum(x, y))
-    elif metric == 'pearson':
-        return np.corrcoef(x, y)[0, 1]
-    elif metric == 'spearman':
-        return 1 - 6 * np.sum((x - y) ** 2) / (len(x) * (len(x) ** 2 - 1))
-    elif metric == 'hamming':
-        return np.sum(x != y) # assuming this is a single value
-    else:
+    fun_metric = {
+        'euclidean': lambda x, y: np.linalg.norm(x - y),
+        'cosine': lambda x, y: np.dot(x, y) / (np.linalg.norm(x) * np.linalg.norm(y)),
+        'manhattan': lambda x, y: np.sum(np.abs(x - y)),
+        'jaccard': lambda x, y: 1 - np.sum(np.minimum(x, y)) / np.sum(np.maximum(x, y)),
+        'pearson': lambda x, y: np.corrcoef(x, y)[0, 1],
+        'spearman': lambda x, y: 1 - 6 * np.sum((x - y) ** 2) / (len(x) * (len(x) ** 2 - 1)),
+        'hamming': lambda x, y: np.sum(x != y)
+    }
+
+    if metric not in fun_metric:
         raise ValueError('Unknown metric')
+    return fun_metric[metric](x, y)
+
+    # if metric == 'euclidean':
+    #     return np.linalg.norm(x - y)
+    # elif metric == 'cosine':
+    #     return np.dot(x, y) / (np.linalg.norm(x) * np.linalg.norm(y))
+    # elif metric == 'manhattan':
+    #     return np.sum(np.abs(x - y))
+    # elif metric == 'jaccard':
+    #     return 1 - np.sum(np.minimum(x, y)) / np.sum(np.maximum(x, y))
+    # elif metric == 'pearson':
+    #     return np.corrcoef(x, y)[0, 1]
+    # elif metric == 'spearman':
+    #     return 1 - 6 * np.sum((x - y) ** 2) / (len(x) * (len(x) ** 2 - 1))
+    # elif metric == 'hamming':
+    #     return np.sum(x != y) # assuming this is a single value
+    # else:
+    #     raise ValueError('Unknown metric')
 
 
 # %%
@@ -268,10 +287,21 @@ def gower_distance(x, y, metrics, weights=None):
     elif weights < 0:
         raise ValueError('The weights must be non-negative')
     
+    fun_metric = {
+        'euclidean': lambda x, y: np.linalg.norm(x - y),
+        'cosine': lambda x, y: np.dot(x, y) / (np.linalg.norm(x) * np.linalg.norm(y)),
+        'manhattan': lambda x, y: np.sum(np.abs(x - y)),
+        'jaccard': lambda x, y: 1 - np.sum(np.minimum(x, y)) / np.sum(np.maximum(x, y)),
+        'pearson': lambda x, y: np.corrcoef(x, y)[0, 1],
+        'spearman': lambda x, y: 1 - 6 * np.sum((x - y) ** 2) / (len(x) * (len(x) ** 2 - 1)),
+        'hamming': lambda x, y: np.sum(x != y)
+    }
+
     prox = 0
     for xk, yk, wk in zip(x, y, weights):
-        curr_metric = metrics[type(xk)]
-        prox += wk*proximity_feat(xk, yk, curr_metric)        
+        # curr_metric = 
+        # prox += wk*proximity_feat(xk, yk, curr_metric)   
+        prox += wk*fun_metric[metrics[type(xk)]](xk, yk)     
     return prox/len(x)
 
 
@@ -354,9 +384,9 @@ plt.imshow(prox_mat, interpolation='nearest', aspect='auto', cmap='coolwarm')
 plt.colorbar()
 
 plt.xlabel('Observations', fontsize=16)
-plt.xticks(np.arange(0, N, step=10))
+plt.xticks(np.arange(0, N, step=1000))
 plt.ylabel('Observations', fontsize=16)
-plt.yticks(np.arange(0, N, step=10))
+plt.yticks(np.arange(0, N, step=1000))
 plt.title('Proximity matrix')
 
 plt.show()
@@ -495,6 +525,12 @@ plot_float_comb_dimensions(df, knee_labels, ['red', 'gray'])
 # In this context, applying a density based approach is quite a risk, as density-based approaches tend to be very sensitive to high-dimensionality, significantly more than distance based ones. This is because density based approaches rely on accurate local distance measurements which tends to lose information as the data becomes more sparse as the dimensionality rises.
 
 # %%
+reduced_data = PCA(n_components=4).fit_transform(df)
+
+# %%
+reduced_prox_mat = proximity_matrix_symmetric(pd.DataFrame(reduced_data), {np.bool_: 'hamming', np.float64: 'euclidean', float: 'euclidean'})
+
+# %%
 # Apply the algorithm
 from sklearn.neighbors import LocalOutlierFactor
 
@@ -524,7 +560,9 @@ plt.ylabel('LOF')
 plt.show()
 
 # %%
-PCA_tSNE_visualization(df, 2, LOF_labels, ['red', 'gray'])
+anomaly_legend = ['Normal', 'Anomalous']
+PCA_tSNE_visualization(df, 2, LOF_labels, ['red', 'gray'], legend=anomaly_legend, title_addition='LOF')
+plot_float_comb_dimensions(df, LOF_labels, ['red', 'gray'], legend=anomaly_legend)
 
 
 # %% [markdown]
@@ -570,9 +608,9 @@ DBSCAN_labels = dbscan.fit_predict(prox_mat)
 DBSCAN_labels[np.where(DBSCAN_labels >= 0)[0]] = 1
 print(f'Number of outliers: {np.where(DBSCAN_labels == -1)[0].shape[0]}')
 
-PCA_tSNE_visualization(df, 2, DBSCAN_labels, ['red', 'gray'])
+PCA_tSNE_visualization(df, 2, DBSCAN_labels, ['red', 'gray'], legend=['Normal', 'Anomalous'], title_addition='DBSCAN')
 
-plot_float_comb_dimensions(df, DBSCAN_labels, ['red', 'gray'])
+plot_float_comb_dimensions(df, DBSCAN_labels, ['red', 'gray'], legend=['Normal', 'Anomalous'])
 
 # %% [markdown]
 # ----
@@ -593,7 +631,7 @@ from scipy.sparse import csr_matrix
 adjacency_matrix = np.full((N, N), np.inf)
 np.fill_diagonal(adjacency_matrix, 0) # diagonal is 0
 for i, neighbour in enumerate(idx):
-        adjacency_matrix[i, neighbour] = dist[i, np.where(indices[i] == neighbour)]
+        adjacency_matrix[i, neighbour] = dist[i, np.where(idx[i] == neighbour)]
 adjacency_matrix[adjacency_matrix == np.inf] = 1000 # ensures connectivity for the shortest path algorithm
 
 # %%
@@ -613,7 +651,7 @@ print(*avg_shortest_path)
 # plt.show()
 
 # %%
-def compute_cof(avg_shortest_paths, indices, k):
+def compute_cof(avg_shortest_paths, indices):
     cof_scores = np.zeros_like(avg_shortest_paths)
     for i in range(len(avg_shortest_paths)):
         neighbors = indices[i]
@@ -623,7 +661,7 @@ def compute_cof(avg_shortest_paths, indices, k):
 
 
 # %%
-cof_scores = compute_cof(avg_shortest_path, idx, k)
+cof_scores = compute_cof(avg_shortest_path, idx)
 
 # %%
 plt.hist(cof_scores, bins=100)
@@ -650,11 +688,11 @@ idx_to_exclude.shape, idx_to_exclude
 # %%
 COF_labels = np.ones(df.shape[0])
 COF_labels[idx_to_exclude] = -1
-PCA_tSNE_visualization(df, 2, COF_labels, ['red', 'gray'])
+PCA_tSNE_visualization(df, 2, COF_labels, ['red', 'gray'], legend=anomaly_legend, title_addition='COF')
+plot_float_comb_dimensions(df, COF_labels, ['red', 'gray'], legend=anomaly_legend)
+
 
 # %%
-plot_float_comb_dimensions(df, COF_labels, ['red', 'gray'])
-
 
 # %% [markdown]
 # ----
