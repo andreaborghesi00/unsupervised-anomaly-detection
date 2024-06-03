@@ -377,10 +377,10 @@ print(np.allclose(np.diag(prox_mat), 0))
 plt.style.use('default')
 
 N, M = prox_mat.shape
-fig1 = plt.figure(figsize=(15,10))
+fig1 = plt.figure(figsize=(40,40))
 
 # Plot 2: proximity matrix
-plt.imshow(prox_mat, interpolation='nearest', aspect='auto', cmap='coolwarm')
+plt.imshow(prox_mat, interpolation='nearest', aspect='auto', cmap='viridis')
 plt.colorbar()
 
 plt.xlabel('Observations', fontsize=16)
@@ -389,14 +389,6 @@ plt.ylabel('Observations', fontsize=16)
 plt.yticks(np.arange(0, N, step=1000))
 plt.title('Proximity matrix')
 
-plt.show()
-
-# %%
-# how to show the proximity matrix with prox_mat
-plt.figure(figsize=(10,10))
-plt.imshow(prox_mat, cmap='viridis')
-plt.colorbar()
-plt.title('Proximity matrix')
 plt.show()
 
 # %% [markdown]
@@ -461,10 +453,10 @@ knee_outliers_idx = np.where(distances[:, -1] > knee_y)[0]
 print(f'Number of outliers: {len(knee_outliers_idx)}')
 knee_labels = np.ones(N)
 knee_labels[knee_outliers_idx] = -1
-PCA_tSNE_visualization(df, 2, knee_labels, ['red', 'gray'])
+PCA_tSNE_visualization(df, 2, knee_labels, ['red', 'gray'], legend=['Normal', 'Anomalous'], title_addition='NN')
 
 # %%
-plot_float_comb_dimensions(df, knee_labels, ['red', 'gray'])
+plot_float_comb_dimensions(df, knee_labels, ['red', 'gray'], legend=['Normal', 'Anomalous'])
 
 # %%
 k = 5 # seems to work best with small k. notice how k=1 is not useful as the queried sample will be itself
@@ -509,10 +501,10 @@ anomalies
 # anomalies visualization
 NN_labels = np.ones(df.shape[0])
 NN_labels[anomalies] = -1
-PCA_tSNE_visualization(df, 2, NN_labels, ['red', 'gray'])
+PCA_tSNE_visualization(df, 2, NN_labels, ['red', 'gray'], legend=['Normal', 'Anomalous'], title_addition='NN')
 
 # %%
-plot_float_comb_dimensions(df, knee_labels, ['red', 'gray'])
+plot_float_comb_dimensions(df, knee_labels, ['red', 'gray'], legend=['Normal', 'Anomalous'])
 
 # %% [markdown]
 # It seems to work best when k is low, but in any case the results don't seem that great. This might be because we're dealing with a high number of dimensions with respect to the number of samples available.
@@ -593,7 +585,7 @@ def plot_kj_dimension(df, labels, feat1, feat2, palette):
 # For the sake of visualization we're plotting float columns only, and although they are a section of the dataset, by plotting every possible combination we can clearly see the density based method is, as a matter of fact, shit.
 
 # %%
-plot_float_comb_dimensions(df, LOF_labels, ['red', 'gray'])
+plot_float_comb_dimensions(df, LOF_labels, ['red', 'gray'], legend=['Normal', 'Anomalous'])
 
 # %% [markdown]
 # ----
@@ -616,8 +608,6 @@ plot_float_comb_dimensions(df, DBSCAN_labels, ['red', 'gray'], legend=['Normal',
 # ----
 # ### <center>Graph Based: COF
 # COF is designed to identify outliers based on the connectivity structure, which can be more robust in high-dimensional spaces or in datasets with complex structures where traditional distance-based methods might struggle. By leveraging graph theory, COF can capture more nuanced relationships between points that pure distance metrics might miss.
-
-# %%
 
 # %%
 near_neigh = NearestNeighbors(n_neighbors=5, metric='precomputed')
@@ -897,6 +887,8 @@ plt.legend()
 plt.show()
 
 # %%
+
+# %%
 # single run of the elbow method with the custom kmeans
 inertia = []
 r = range(1,16)
@@ -906,7 +898,6 @@ threads = []
 for k in r:
     t = threading.Thread(target=kmeans_gower_revisited, args=(df, k, None, None, 100, None, False, res_queue))
     threads.append(t)
-
     if len(threads) % 8 == 0:
         for t in threads:
             t.start()
@@ -1166,10 +1157,10 @@ idx_to_exclude.shape, idx_to_exclude
 # visualize the excluded samples with method 1
 KM1_labels = np.ones(df.shape[0])
 KM1_labels[idx_to_exclude] = -1
-PCA_tSNE_visualization(df, 2, KM1_labels, ['red', 'gray'])
+PCA_tSNE_visualization(df, 2, KM1_labels, ['red', 'gray'], legend=anomaly_legend, title_addition='K-Means')
 
 # %%
-plot_float_comb_dimensions(df, KM1_labels, ['red', 'gray'])
+plot_float_comb_dimensions(df, KM1_labels, ['red', 'gray'], legend=anomaly_legend)
 
 # %%
 # Method 2: thresholding
@@ -1185,10 +1176,10 @@ idx_to_exclude.shape
 # visualization of the excluded samples with method 2
 KM2_labels = np.ones(df.shape[0])
 KM2_labels[idx_to_exclude] = -1
-PCA_tSNE_visualization(df, 2, KM2_labels, ['red', 'gray'])
+PCA_tSNE_visualization(df, 2, KM2_labels, ['red', 'gray'], legend=['Normal', 'Anomalous'], title_addition='K-Means')
 
 # %%
-plot_float_comb_dimensions(df, KM2_labels, ['red', 'gray'])
+plot_float_comb_dimensions(df, KM2_labels, ['red', 'gray'], legend=['Normal', 'Anomalous'])
 
 # %%
 # Method 3: Elbow method
@@ -1210,10 +1201,10 @@ idx_to_exclude.shape
 # %%
 KM3_labels = np.ones(df.shape[0])
 KM3_labels[idx_to_exclude] = -1
-PCA_tSNE_visualization(df, 2, KM3_labels, ['red', 'gray'])
+PCA_tSNE_visualization(df, 2, KM3_labels, ['red', 'gray'], legend=anomaly_legend, title_addition='K-Means')
 
 # %%
-plot_float_comb_dimensions(df, KM3_labels, ['red', 'gray'])
+plot_float_comb_dimensions(df, KM3_labels, ['red', 'gray'], legend=anomaly_legend)
 
 
 # %%
@@ -1306,10 +1297,10 @@ idx_to_exclude.shape, idx_to_exclude
 # %%
 PCA_labels = np.ones(df.shape[0])
 PCA_labels[idx_to_exclude] = -1
-PCA_tSNE_visualization(df, 2, PCA_labels, ['red', 'gray'])
+PCA_tSNE_visualization(df, 2, PCA_labels, ['red', 'gray'], legend=anomaly_legend, title_addition='PCA')
 
 # %%
-plot_float_comb_dimensions(df, PCA_labels, ['red', 'gray'])
+plot_float_comb_dimensions(df, PCA_labels, ['red', 'gray'], legend=anomaly_legend)
 
 
 # %% [markdown]
@@ -1395,8 +1386,8 @@ idx_to_exclude = idx_sorted_reconstruction[:int(n_samples_to_exclude)]
 autoencoder_labels = np.ones(df.shape[0])
 autoencoder_labels[idx_to_exclude] = -1
 
-PCA_tSNE_visualization(df, 2, autoencoder_labels, ['red', 'gray'])
-plot_float_comb_dimensions(df, autoencoder_labels, ['red', 'gray'])
+PCA_tSNE_visualization(df, 2, autoencoder_labels, ['red', 'gray'], legend=anomaly_legend, title_addition='Autoencoders')
+plot_float_comb_dimensions(df, autoencoder_labels, ['red', 'gray'], legend=anomaly_legend)
 
 
 # %% [markdown]
@@ -1418,8 +1409,8 @@ def common_outliers(methods):
 common_outliers_labels = common_outliers(methods)
 print(f'Number of common outliers: {np.sum(common_outliers_labels == -1)}\n\n')
 
-PCA_tSNE_visualization(df, 2, common_outliers_labels, ['red', 'gray'])
-plot_float_comb_dimensions(df, common_outliers_labels, ['red', 'gray'])
+PCA_tSNE_visualization(df, 2, common_outliers_labels, ['red', 'gray'], legend=anomaly_legend, title_addition='Ensemble: AND')
+plot_float_comb_dimensions(df, common_outliers_labels, ['red', 'gray'], legend=anomaly_legend)
 
 # %%
 methods = [KM1_labels, autoencoder_labels, NN_labels, PCA_labels, LOF_labels]
@@ -1434,8 +1425,8 @@ def sum_outliers(methods):
 sum_outliers_labels = sum_outliers(methods)
 print(f'Number of sum outliers: {np.sum(sum_outliers_labels == -1)}\n\n')
 
-PCA_tSNE_visualization(df, 2, sum_outliers_labels, ['red', 'gray'])
-plot_float_comb_dimensions(df, sum_outliers_labels, ['red', 'gray'])
+PCA_tSNE_visualization(df, 2, sum_outliers_labels, ['red', 'gray'], legend=anomaly_legend, title_addition='Ensemble: OR')
+plot_float_comb_dimensions(df, sum_outliers_labels, ['red', 'gray'], legend=anomaly_legend)
 
 # %% [markdown]
 # ----
