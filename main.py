@@ -396,7 +396,7 @@ print(np.allclose(np.diag(prox_mat), 0))
 plt.style.use('default')
 
 N, M = prox_mat.shape
-fig1 = plt.figure(figsize=(40,40))
+fig1 = plt.figure(figsize=(15,15))
 
 # Plot 2: proximity matrix
 plt.imshow(prox_mat, interpolation='nearest', aspect='auto', cmap='viridis')
@@ -509,7 +509,7 @@ plot_float_comb_dimensions(df, dsn_knn_labels, ['gray', 'red'], legend=['Anomalo
 t2_bound = two_stage_iqr_bound(knn_score)
 
 t2_outliers_idx = np.where(knn_score > t2_bound)[0]
-print(f'Number of outliers: {len(t2_outliers_idx)}')
+print(f'Number of outliers: {len(t2_outliers_idx)}, {len(t2_outliers_idx)/N*100:.2f}%')
 NN_labels = np.ones(N)
 NN_labels[t2_outliers_idx] = -1
 PCA_tSNE_visualization(df, 2, NN_labels, ['red', 'gray'], legend=['Normal', 'Anomalous'], title_addition='NN')
@@ -538,7 +538,7 @@ LOF_values     = lof_model.negative_outlier_factor_
 np.where(LOF_labels == -1)[0].shape
 
 # %%
-np.min(LOF_values)
+np.min(LOF_values), np.max(LOF_values)
 
 # %%
 plt.hist(LOF_values, bins=100)
@@ -590,6 +590,16 @@ def plot_kj_dimension(df, labels, feat1, feat2, palette):
 # %%
 plot_float_comb_dimensions(df, LOF_labels, ['red', 'gray'], legend=['Normal', 'Anomalous'])
 
+# %%
+t2_bound = two_stage_iqr_bound(-LOF_values)
+
+t2_outliers_idx = np.where(-LOF_values > t2_bound)[0]
+print(f'Number of outliers: {len(t2_outliers_idx)}, {len(t2_outliers_idx)/N*100:.2f}%')
+NN_labels = np.ones(N)
+NN_labels[t2_outliers_idx] = -1
+PCA_tSNE_visualization(df, 2, NN_labels, ['red', 'gray'], legend=['Normal', 'Anomalous'], title_addition='NN')
+plot_float_comb_dimensions(df, NN_labels, ['red', 'gray'], legend=['Normal', 'Anomalous'])
+
 # %% [markdown]
 # ----
 # ### <center>DBSCAN
@@ -601,7 +611,7 @@ from sklearn.cluster import DBSCAN
 dbscan = DBSCAN(eps=0.125, min_samples=5, metric='precomputed')
 DBSCAN_labels = dbscan.fit_predict(prox_mat)
 DBSCAN_labels[np.where(DBSCAN_labels >= 0)[0]] = 1
-print(f'Number of outliers: {np.where(DBSCAN_labels == -1)[0].shape[0]}')
+print(f'Number of outliers: {np.where(DBSCAN_labels == -1)[0].shape[0]}, {np.where(DBSCAN_labels == -1)[0].shape[0]/N*100:.2f}%')
 
 PCA_tSNE_visualization(df, 2, DBSCAN_labels, ['red', 'gray'], legend=['Normal', 'Anomalous'], title_addition='DBSCAN')
 
@@ -697,7 +707,7 @@ plot_float_comb_dimensions(df, dsn_cof_labels, ['gray', 'red'], legend=['Anomalo
 t2_bound = two_stage_iqr_bound(cof_scores)
 
 t2_outliers_idx = np.where(cof_scores > t2_bound)[0]
-print(f'Number of outliers: {len(t2_outliers_idx)}')
+print(f'Number of outliers: {len(t2_outliers_idx)}', f'{len(t2_outliers_idx)/N*100:.2f}%')
 COF_labels = np.ones(N)
 COF_labels[t2_outliers_idx] = -1
 PCA_tSNE_visualization(df, 2, COF_labels, ['red', 'gray'], legend=['Normal', 'Anomalous'], title_addition='COF')
@@ -1242,7 +1252,7 @@ plot_float_comb_dimensions(df, dsn_km_labels, ['gray', 'red'], legend=['Anomalou
 t2_bound = two_stage_iqr_bound(km_scores)
 
 t2_outliers_idx = np.where(km_scores > t2_bound)[0]
-print(f'Number of outliers: {len(t2_outliers_idx)}')
+print(f'Number of outliers: {len(t2_outliers_idx)}, {len(t2_outliers_idx)/N*100:.2f}%')
 KM_labels = np.ones(N)
 KM_labels[t2_outliers_idx] = -1
 PCA_tSNE_visualization(df, 2, KM_labels, ['red', 'gray'], legend=['Normal', 'Anomalous'], title_addition='K-Means')
@@ -1479,7 +1489,7 @@ plot_float_comb_dimensions(df, ED_labels, ['red', 'gray'], legend=['Normal', 'An
 
 # %%
 # find all the points that are outliers in all the methods
-methods = [KM_labels, ED_labels, NN_labels]
+methods = [KM_labels, ED_labels, NN_labels, DBSCAN_labels]
 
 def common_outliers(methods):
     common_outliers = methods[0]
@@ -1499,7 +1509,7 @@ plot_float_comb_dimensions(df, common_outliers_labels, ['red', 'gray'], legend=a
 # ### <center> OR
 
 # %%
-methods = [KM_labels, ED_labels, NN_labels, PCA_labels, LOF_labels]
+methods = [KM_labels, ED_labels, NN_labels, DBSCAN_labels]
 
 def sum_outliers(methods):
     sum_outliers = methods[0]
@@ -1564,6 +1574,13 @@ WS_labels = np.ones(N)
 WS_labels[t2_outliers_idx] = -1
 PCA_tSNE_visualization(df, 2, WS_labels, ['red', 'gray'], legend=['Normal', 'Anomalous'], title_addition='Weighted sum')
 plot_float_comb_dimensions(df, WS_labels, ['red', 'gray'], legend=['Normal', 'Anomalous'])
+
+# %%
+plt.hist(ws_scores, bins=100)
+plt.title('Weighted sum scores')
+plt.xlabel('Score')
+plt.ylabel('Frequency')
+plt.show()
 
 # %% [markdown]
 # ----
