@@ -45,6 +45,10 @@ df = pd.read_csv('datasets/data.csv', sep=';', index_col='Row')
 df.head(3)
 
 
+# %% [markdown]
+# ----
+# # <center> Utility and Visualization functions
+
 # %%
 def PCA_tSNE_visualization(data2visualize, NCOMP, LABELS, PAL='viridis', title_addition='', legend=None):
 
@@ -130,6 +134,27 @@ def plot_float_comb_dimensions(df, labels, palette, legend=None):
 
 
 # %%
+def plot_kj_dimension(df, labels, feat1, feat2, palette):
+    """
+    Plot the k-th dimension against the j-th dimension of the dataset with the specified labels.
+
+    Parameters:
+    df (pandas DataFrame): The input dataset.
+    labels (array-like): The labels of the dataset.
+    k (int): The dimension to plot.
+    palette (list): The colors to use for the labels.
+    """
+    fig = plt.figure(figsize=(8, 6))
+    ax = fig.add_subplot(111)
+    sns.scatterplot(x = df[df.columns[feat1]], y = df[df.columns[feat2]], hue=labels, palette=palette)
+    ax.set_xlabel(f'Dimension {feat1}')
+    ax.set_ylabel(f'Dimension {feat2}')
+    ax.legend()
+    plt.show()
+
+
+
+# %%
 def iqr_bound(scores):
     q3 = np.quantile(scores, 0.75)
     q1 = np.quantile(scores, 0.25)
@@ -151,7 +176,6 @@ def two_stage_iqr_bound(scores):
 
 # %%
 # change the data type of the columns to float
-
 df = df.replace(',', '.', regex=True)
 df.drop(['Unnamed: 22', 'Unnamed: 23'], axis=1, inplace=True)
 df.head(3)
@@ -185,7 +209,7 @@ df.describe()
 df.isnull().sum()
 
 # %%
-# # scaling of float columns
+# scaling of float columns
 scaler = StandardScaler()
 df[float_cols] = scaler.fit_transform(df[float_cols])
 
@@ -216,67 +240,6 @@ PCA_tSNE_visualization(df, 2, np.ones(df.shape[0]), 'viridis')
 
 # %% [markdown]
 # #### <center>Proximity Matrix for mixed data-types
-# We should store these functions in a library
-
-# %%
-def proximity_feat(x, y, metric):
-    """
-    Calculate the proximity between two input vectors using the specified metric.
-    This is intended to compute the proximity between two single features.
-    
-    Parameters:
-    x (array-like): The first input vector.
-    y (array-like): The second input vector.
-    metric (str): The metric to use. Supported metrics are:
-        - 'euclidean': Euclidean distance.
-        - 'cosine': Cosine similarity.
-        - 'manhattan': Manhattan distance.
-        - 'jaccard': Jaccard similarity.
-        - 'pearson': Pearson correlation coefficient.
-        - 'spearman': Spearman correlation coefficient.
-        - 'hamming': Hamming distance.
-
-    Returns:
-    float: The proximity between the two input vectors.
-
-    Raises:
-    ValueError: If the two input vectors are not of the same type.
-    ValueError: If an unknown metric is specified.
-    """
-    if(type(x) != type(y)):
-        raise ValueError(f'The two inputs must be of the same type, got {type(x)} and {type(y)}')
-
-    fun_metric = {
-        'euclidean': lambda x, y: np.linalg.norm(x - y),
-        'cosine': lambda x, y: np.dot(x, y) / (np.linalg.norm(x) * np.linalg.norm(y)),
-        'manhattan': lambda x, y: np.sum(np.abs(x - y)),
-        'jaccard': lambda x, y: 1 - np.sum(np.minimum(x, y)) / np.sum(np.maximum(x, y)),
-        'pearson': lambda x, y: np.corrcoef(x, y)[0, 1],
-        'spearman': lambda x, y: 1 - 6 * np.sum((x - y) ** 2) / (len(x) * (len(x) ** 2 - 1)),
-        'hamming': lambda x, y: np.sum(x != y)
-    }
-
-    if metric not in fun_metric:
-        raise ValueError('Unknown metric')
-    return fun_metric[metric](x, y)
-
-    # if metric == 'euclidean':
-    #     return np.linalg.norm(x - y)
-    # elif metric == 'cosine':
-    #     return np.dot(x, y) / (np.linalg.norm(x) * np.linalg.norm(y))
-    # elif metric == 'manhattan':
-    #     return np.sum(np.abs(x - y))
-    # elif metric == 'jaccard':
-    #     return 1 - np.sum(np.minimum(x, y)) / np.sum(np.maximum(x, y))
-    # elif metric == 'pearson':
-    #     return np.corrcoef(x, y)[0, 1]
-    # elif metric == 'spearman':
-    #     return 1 - 6 * np.sum((x - y) ** 2) / (len(x) * (len(x) ** 2 - 1))
-    # elif metric == 'hamming':
-    #     return np.sum(x != y) # assuming this is a single value
-    # else:
-    #     raise ValueError('Unknown metric')
-
 
 # %%
 def gower_distance(x, y, metrics, weights=None):
@@ -317,9 +280,7 @@ def gower_distance(x, y, metrics, weights=None):
     }
 
     prox = 0
-    for xk, yk, wk in zip(x, y, weights):
-        # curr_metric = 
-        # prox += wk*proximity_feat(xk, yk, curr_metric)   
+    for xk, yk, wk in zip(x, y, weights): 
         prox += wk*fun_metric[metrics[type(xk)]](xk, yk)     
     return prox/len(x)
 
@@ -385,12 +346,10 @@ except:
 # %%
 # symmetry check
 print(np.allclose(prox_mat, prox_mat.T))
-# print(np.allclose(prox_mat_mt, prox_mat_mt.T))
 
 # %%
 # check zero diagonal
 print(np.allclose(np.diag(prox_mat), 0))
-# print(np.allclose(np.diag(prox_mat_mt), 0))
 
 # %%
 plt.style.use('default')
@@ -414,8 +373,12 @@ plt.show()
 # ----
 # ### <center>Distance Based: NN Approach
 
+# %% [markdown]
+# The k-Nearest Neighbour (k-NN) algorithm for distance-based anomaly detection relies on the principle that anomalous data objects exhibit significantly larger distances to their k-nearest neighbours compared to ordinary data objects. By exploiting this property, the algorithm can effectively identify anomalies within the dataset.
+# To apply this approach, we compute the distance between each data object and its fifth nearest neighbour and then exclude the ones that have it the furthest.
+
 # %%
-k = 5 # seems to work best with small k. notice how k=1 is not useful as the queried sample will be itself
+k = 5 # number of neighbors
 knn = NearestNeighbors(n_neighbors=k-1, metric='precomputed') # if we query the same points then the first one will be the point itself and ignored by default, so to get k=5 we need to set k=4
 knn.fit(prox_mat);
 dist, idx= knn.kneighbors()
@@ -432,9 +395,12 @@ plt.show()
 
 # %%
 sorted_dist_idx = np.argsort(knn_score)[::-1]
-
-# %%
 print(*dist[sorted_dist_idx, -1])
+
+# %% [markdown]
+# For this first method we will show different way of thresholding, while for the following ones we will stick just to one for consistency.
+#
+# The first methods assumes the percentage of anomalous data objects within the dataset, for instance 5%
 
 # %%
 anomaly_perc = 0.05
@@ -442,8 +408,6 @@ n_anomalies = np.round(anomaly_perc*df.shape[0])
 
 anomalies = sorted_dist_idx[:int(n_anomalies)]
 dist_sorted = dist[sorted_dist_idx, -1]
-
-# %%
 anomalies.shape
 
 # %%
@@ -452,6 +416,9 @@ NN_labels = np.ones(df.shape[0])
 NN_labels[anomalies] = -1
 PCA_tSNE_visualization(df, 2, NN_labels, ['red', 'gray'], legend=['Normal', 'Anomalous'], title_addition='NN')
 plot_float_comb_dimensions(df, NN_labels, ['red', 'gray'], legend=['Normal', 'Anomalous'])
+
+# %% [markdown]
+# This second one uses the knee method and a knee locator object from the kneed library to automatically decide where is the knee/elbow point
 
 # %%
 from kneed import KneeLocator
@@ -496,6 +463,9 @@ knee_labels[knee_outliers_idx] = -1
 PCA_tSNE_visualization(df, 2, knee_labels, ['red', 'gray'], legend=['Normal', 'Anomalous'], title_addition='NN')
 plot_float_comb_dimensions(df, knee_labels, ['red', 'gray'], legend=['Normal', 'Anomalous'])
 
+# %% [markdown]
+# The third ones uses the Bhattcharyya distance, comparing the distribution of the anomaly score (the distance from the fifth nearest neighbour) to a gaussian distribution
+
 # %%
 thres = DSN(metric='BHT')
 dsn_knn_labels = thres.eval(knn_score)
@@ -504,6 +474,11 @@ print(len(np.where(dsn_knn_labels == 1)[0]))
 
 PCA_tSNE_visualization(df, 2, dsn_knn_labels, ['gray', 'red'], legend=['Anomalous', 'Normal'], title_addition='DSN')
 plot_float_comb_dimensions(df, dsn_knn_labels, ['gray', 'red'], legend=['Anomalous', 'Normal'])
+
+# %% [markdown]
+# This last one is a two-step approach using a classic IQR thresholding. Two-step methods are more effective as due to their nature of recomputing the bound once the most apparent anomalies are removed, letting more nuanced anomalies to be found.
+#
+# For the subsequent anomaly detection methods we will settle for this approach of thresholding.
 
 # %%
 t2_bound = two_stage_iqr_bound(knn_score)
@@ -555,34 +530,14 @@ plt.ylabel('LOF')
 plt.show()
 
 # %%
+# suggested labels
+
 anomaly_legend = ['Normal', 'Anomalous']
 PCA_tSNE_visualization(df, 2, LOF_labels, ['red', 'gray'], legend=anomaly_legend, title_addition='LOF')
 plot_float_comb_dimensions(df, LOF_labels, ['red', 'gray'], legend=anomaly_legend)
 
-
 # %% [markdown]
 # Just with a glance of PCA and tSNE visualization, we can say that it has not found many proper outliers. To further confirm this hypothesis we can explore more thoroughly some non-transformed dimensions.
-
-# %%
-def plot_kj_dimension(df, labels, feat1, feat2, palette):
-    """
-    Plot the k-th dimension against the j-th dimension of the dataset with the specified labels.
-
-    Parameters:
-    df (pandas DataFrame): The input dataset.
-    labels (array-like): The labels of the dataset.
-    k (int): The dimension to plot.
-    palette (list): The colors to use for the labels.
-    """
-    fig = plt.figure(figsize=(8, 6))
-    ax = fig.add_subplot(111)
-    sns.scatterplot(x = df[df.columns[feat1]], y = df[df.columns[feat2]], hue=labels, palette=palette)
-    ax.set_xlabel(f'Dimension {feat1}')
-    ax.set_ylabel(f'Dimension {feat2}')
-    ax.legend()
-    plt.show()
-
-
 
 # %% [markdown]
 # For the sake of visualization we're plotting float columns only, and although they are a section of the dataset, by plotting every possible combination we can clearly see the density based method is, as a matter of fact, shit.
@@ -603,6 +558,9 @@ plot_float_comb_dimensions(df, NN_labels, ['red', 'gray'], legend=['Normal', 'An
 # %% [markdown]
 # ----
 # ### <center>DBSCAN
+
+# %% [markdown]
+# While not explicitly designed for anomaly detection, the DBSCAN (Density-Based Spatial Clustering of Applications with Noise) algorithm can be adapted for this purpose. We are not necessarily interested in the clusters formed, but rather those data object marked as "noise points" that are removed during the clustering procedure. As we may notice, this method does not allow for any thresholding as the implementation of sklearn that we're going to use directly a label (-1) for noise data objects.
 
 # %%
 # dbscan
@@ -672,36 +630,6 @@ plt.title('COF scores')
 plt.xlabel('COF')
 plt.ylabel('Frequency')
 plt.show()
-
-# %%
-sorted_cof_idx = np.argsort(cof_scores)[::-1]
-print(*cof_scores[sorted_cof_idx])
-
-# %%
-print(*cof_scores)
-
-# %%
-# top 5% of the 
-n = 0.05
-n_samples_to_exclude = np.ceil(n*df.shape[0])
-idx_sorted_cof = np.argsort(cof_scores)[::-1] # sort in descending order
-idx_to_exclude = idx_sorted_cof[:int(n_samples_to_exclude)]
-idx_to_exclude.shape, idx_to_exclude
-
-# %%
-COF_labels = np.ones(df.shape[0])
-COF_labels[idx_to_exclude] = -1
-PCA_tSNE_visualization(df, 2, COF_labels, ['red', 'gray'], legend=anomaly_legend, title_addition='COF')
-plot_float_comb_dimensions(df, COF_labels, ['red', 'gray'], legend=anomaly_legend)
-
-# %%
-thres = DSN(metric='BHT')
-dsn_cof_labels = thres.eval(cof_scores)
-
-print(len(np.where(dsn_cof_labels == 1)[0]))
-
-PCA_tSNE_visualization(df, 2, dsn_cof_labels, ['gray', 'red'], legend=['Anomalous', 'Normal'], title_addition='DSN')
-plot_float_comb_dimensions(df, dsn_cof_labels, ['gray', 'red'], legend=['Anomalous', 'Normal'])
 
 # %%
 t2_bound = two_stage_iqr_bound(cof_scores)
@@ -1135,10 +1063,6 @@ print(f'The most recurrent optimal number of clusters is {most_recurrent_k}')
 labels, medoids, inertia = kmeans_gower_revisited(df, 5, max_iter=100, keep_types=True)
 
 # %%
-# silhouette score
-silhouette_score(prox_mat, labels, metric='precomputed')
-
-# %%
 PCA_tSNE_visualization(df, 5, labels, 'viridis')
 
 # %%
@@ -1175,79 +1099,6 @@ plt.show()
 # %%
 prox_centers.shape
 
-# %% [markdown]
-# Now we can handle what is an outlier in 3 main ways: decide a percentage of outliers and exclude the $x\%$ furthest elements from their medoids (1), use a threshold $\delta$ and exclude the elements that are further than $\delta$ from their medoid (2), or use the knee method on the ordered elements per distance from their medoids (3)
-
-# %%
-# Method 1: exclude 5% of the data
-
-n = 0.05
-n_samples_to_exclude = np.ceil(n*df.shape[0])
-idx_sorted_prox = np.argsort(prox_centers)[::-1] # sort in descending order
-idx_to_exclude = idx_sorted_prox[:int(n_samples_to_exclude)]
-idx_to_exclude.shape, idx_to_exclude
-
-# %%
-# visualize the excluded samples with method 1
-KM1_labels = np.ones(df.shape[0])
-KM1_labels[idx_to_exclude] = -1
-PCA_tSNE_visualization(df, 2, KM1_labels, ['red', 'gray'], legend=anomaly_legend, title_addition='K-Means')
-
-# %%
-plot_float_comb_dimensions(df, KM1_labels, ['red', 'gray'], legend=anomaly_legend)
-
-# %%
-# Method 2: thresholding
-
-median = np.median(prox_centers)
-std = np.std(prox_centers)
-threshold = median + 2*std
-
-idx_to_exclude = np.where(prox_centers > threshold)[0]
-idx_to_exclude.shape
-
-# %%
-# visualization of the excluded samples with method 2
-KM2_labels = np.ones(df.shape[0])
-KM2_labels[idx_to_exclude] = -1
-PCA_tSNE_visualization(df, 2, KM2_labels, ['red', 'gray'], legend=['Normal', 'Anomalous'], title_addition='K-Means')
-
-# %%
-plot_float_comb_dimensions(df, KM2_labels, ['red', 'gray'], legend=['Normal', 'Anomalous'])
-
-# %%
-# Method 3: Elbow method
-# we could have used the same observation made above, but we will use scipy's KneeLocator as it is more robust 
-sorted_prox_centers = np.sort(prox_centers)
-knee = KneeLocator(np.arange(len(sorted_prox_centers)), sorted_prox_centers, S=1, curve='convex', direction='increasing', interp_method='polynomial', online=True)
-knee_x = knee.knee
-knee_y = knee.knee_y # our threshold
-idx_to_exclude = np.where(prox_centers > knee_y)[0]
-
-plt.plot(sorted_prox_centers, 'o-')
-plt.axvline(x=knee_x, color='k', linestyle='--')
-plt.axhline(y=knee_y, color='k', linestyle='--')
-plt.plot((knee_x), (knee_y), 'o', color='r')
-plt.grid()
-plt.show()
-idx_to_exclude.shape
-
-# %%
-KM3_labels = np.ones(df.shape[0])
-KM3_labels[idx_to_exclude] = -1
-PCA_tSNE_visualization(df, 2, KM3_labels, ['red', 'gray'], legend=anomaly_legend, title_addition='K-Means')
-
-# %%
-plot_float_comb_dimensions(df, KM3_labels, ['red', 'gray'], legend=anomaly_legend)
-
-# %%
-dsn_km_labels = thres.eval(km_scores)
-
-print(len(np.where(dsn_km_labels == 1)[0]))
-
-PCA_tSNE_visualization(df, 2, dsn_km_labels, ['gray', 'red'], legend=['Anomalous', 'Normal'], title_addition='DSN')
-plot_float_comb_dimensions(df, dsn_km_labels, ['gray', 'red'], legend=['Anomalous', 'Normal'])
-
 # %%
 t2_bound = two_stage_iqr_bound(km_scores)
 
@@ -1258,9 +1109,6 @@ KM_labels[t2_outliers_idx] = -1
 PCA_tSNE_visualization(df, 2, KM_labels, ['red', 'gray'], legend=['Normal', 'Anomalous'], title_addition='K-Means')
 plot_float_comb_dimensions(df, KM_labels, ['red', 'gray'], legend=['Normal', 'Anomalous'])
 
-
-# %%
-# TODO: move cells to have the analysis of the naive kmeans and the elbow method together and then the gower distance kmeans and the elbow method together
 
 # %% [markdown]
 # ----
@@ -1341,29 +1189,6 @@ plt.xlabel('Error')
 plt.ylabel('Frequency')
 plt.xlim(0, 0.25)
 plt.show()
-
-# %%
-from pythresh.thresholds.dsn import DSN
-
-thres = DSN(metric='BHT')
-dsn_pca_labels = thres.eval(pca_score)
-len(np.where(dsn_pca_labels == 1)[0])
-
-# %%
-PCA_tSNE_visualization(df, 2, dsn_pca_labels, ['gray', 'red'], legend=['Anomalous', 'Normal'], title_addition='DSN-PCA')
-plot_float_comb_dimensions(df, dsn_pca_labels, ['gray', 'red'], legend=['Anomalous', 'Normal'])
-
-# %%
-n = 0.05
-n_samples_to_exclude = np.ceil(n*df.shape[0])
-idx_sorted_reconstruction = np.argsort(reconstruction_error)[::-1] # sort in descending order
-idx_to_exclude = idx_sorted_reconstruction[:int(n_samples_to_exclude)]
-
-# %%
-PCA_labels = np.ones(df.shape[0])
-PCA_labels[idx_to_exclude] = -1
-PCA_tSNE_visualization(df, 2, PCA_labels, ['red', 'gray'], legend=anomaly_legend, title_addition='PCA')
-plot_float_comb_dimensions(df, PCA_labels, ['red', 'gray'], legend=anomaly_legend)
 
 # %%
 t2_bound = two_stage_iqr_bound(pca_score)
@@ -1456,21 +1281,6 @@ plt.ylabel('Frequency')
 plt.show()
 
 # %%
-
-# Identify anomalies based on reconstruction error
-n = 0.05
-n_samples_to_exclude = np.ceil(n * df.shape[0])
-idx_sorted_reconstruction = np.argsort(ed_score)[::-1]
-idx_to_exclude = idx_sorted_reconstruction[:int(n_samples_to_exclude)]
-
-autoencoder_labels = np.ones(df.shape[0])
-autoencoder_labels[idx_to_exclude] = -1
-
-PCA_tSNE_visualization(df, 2, autoencoder_labels, ['red', 'gray'], legend=anomaly_legend, title_addition='Autoencoders')
-plot_float_comb_dimensions(df, autoencoder_labels, ['red', 'gray'], legend=anomaly_legend)
-
-
-# %%
 t2_bound = two_stage_iqr_bound(ed_score)
 
 t2_outliers_idx = np.where(ed_score > t2_bound)[0]
@@ -1543,29 +1353,6 @@ def weighted_sum(scores, weights):
 ws_scores = weighted_sum(methods_scores, weights)
 
 # %%
-# take top 5% of the data
-n = 0.05
-n_samples_to_exclude = np.ceil(n*df.shape[0])
-idx_sorted_weighted = np.argsort(ws_scores)[::-1]
-idx_to_exclude = idx_sorted_weighted[:int(n_samples_to_exclude)]
-
-# %%
-weighted_labels = np.ones(df.shape[0])
-weighted_labels[idx_to_exclude] = -1
-print(f'Number of weighted outliers: {np.sum(weighted_labels == -1)}\n\n')
-
-PCA_tSNE_visualization(df, 2, weighted_labels, ['red', 'gray'], legend=anomaly_legend, title_addition='Ensemble: Weighted sum')
-plot_float_comb_dimensions(df, weighted_labels, ['red', 'gray'], legend=anomaly_legend)
-
-# %%
-dsn_ws_labels = thres.eval(weighted_sum(methods_scores, weights))
-
-print(len(np.where(dsn_ws_labels == 1)[0]))
-
-PCA_tSNE_visualization(df, 2, dsn_ws_labels, ['gray', 'red'], legend=['Anomalous', 'Normal'], title_addition='DSN')
-plot_float_comb_dimensions(df, dsn_ws_labels, ['gray', 'red'], legend=['Anomalous', 'Normal'])
-
-# %%
 t2_bound = two_stage_iqr_bound(ws_scores)
 
 t2_outliers_idx = np.where(ws_scores > t2_bound)[0]
@@ -1614,52 +1401,3 @@ plt.title('Match on outlier detection between NN and LOF (Rand index = %.3f)' %R
 plt.legend(["NN", "LOF"])
 plt.grid()
 plt.show()
-
-# %% [markdown]
-# # <center>Confronting silhouettes
-
-# %%
-labels, centroids, inertia = kmeans_gower_revisited(df, 5, max_iter=100, keep_types=True)
-
-# %%
-silhouette_score(prox_mat, labels, metric='precomputed')
-
-
-# %%
-def silhoutte_score_anomalies(pmat, labels, anomalies):
-    anomalies_idx = np.where(anomalies == -1)[0]
-    labels_new = labels.copy()
-    labels_new[anomalies_idx] = -1
-    return silhouette_score(pmat, labels_new, metric='precomputed')
-
-
-
-# %%
-def silhouette_score_without_anomalies(data, anomalies):
-    anomalies_idx = np.where(anomalies == -1)[0]
-    data_new = data.copy()
-    data_new = data_new.drop(anomalies_idx)
-    l, c, i = kmeans_gower_revisited(data_new, 5, max_iter=100, keep_types=True)
-    return silhouette_score(data_new, l, metric='euclidean')
-
-
-# %%
-outlier_detection_dict = {
-    'KM1': KM1_labels,
-    'KM2': KM2_labels,
-    'KM3': KM3_labels,
-    'PCA': PCA_labels,
-    'LOF': LOF_labels,
-    'NN': NN_labels,
-    'DBSCAN': DBSCAN_labels,
-    # 'COF': COF_labels,
-    'common_outliers': common_outliers_labels,
-    'sum_outliers': sum_outliers_labels,
-    'autoencoder': autoencoder_labels
-}
-
-# %%
-{key: silhouette_score_without_anomalies(df, value) for key, value in outlier_detection_dict.items()}
-
-# %%
-{key: silhoutte_score_anomalies(prox_mat, labels, value) for key, value in outlier_detection_dict.items()}
