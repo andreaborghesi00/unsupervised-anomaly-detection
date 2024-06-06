@@ -156,6 +156,16 @@ def plot_kj_dimension(df, labels, feat1, feat2, palette):
 
 # %%
 def iqr_bound(scores):
+    """
+    Calculate the upper bound for outliers using the interquartile range (IQR) method.
+
+    Parameters:
+    scores (array-like): An array-like object containing the scores.
+
+    Returns:
+    float: The upper bound for outliers.
+
+    """
     q3 = np.quantile(scores, 0.75)
     q1 = np.quantile(scores, 0.25)
     iqr = q3 - q1
@@ -163,6 +173,16 @@ def iqr_bound(scores):
     return q3 + 1.5*iqr
 
 def two_stage_iqr_bound(scores):
+    """
+    Calculate the two-stage IQR bound for a given array of scores.
+
+    Parameters:
+    scores (array-like): An array of scores.
+
+    Returns:
+    float: The two-stage IQR bound.
+
+    """
     t1_bound = iqr_bound(scores)
     t1_survivors = np.where(scores <= t1_bound)[0]
 
@@ -1356,7 +1376,7 @@ ws_scores = weighted_sum(methods_scores, weights)
 t2_bound = two_stage_iqr_bound(ws_scores)
 
 t2_outliers_idx = np.where(ws_scores > t2_bound)[0]
-print(f'Number of outliers: {len(t2_outliers_idx)}')
+print(f'Number of outliers: {len(t2_outliers_idx)}, {len(t2_outliers_idx)/N*100:.2f}%')
 WS_labels = np.ones(N)
 WS_labels[t2_outliers_idx] = -1
 PCA_tSNE_visualization(df, 2, WS_labels, ['red', 'gray'], legend=['Normal', 'Anomalous'], title_addition='Weighted sum')
@@ -1372,6 +1392,9 @@ plt.show()
 # %% [markdown]
 # ----
 # # <center>Detections coherence
+
+# %%
+del metrics
 
 # %%
 import sklearn.metrics as metrics
@@ -1401,3 +1424,18 @@ plt.title('Match on outlier detection between NN and LOF (Rand index = %.3f)' %R
 plt.legend(["NN", "LOF"])
 plt.grid()
 plt.show()
+
+# %%
+methods_labels = [NN_labels, LOF_labels, DBSCAN_labels, COF_labels, KM_labels, ED_labels, WS_labels]
+methods_names = ['NN', 'LOF', 'DBSCAN', 'COF', 'K-Means', 'Autoencoder', 'Weighted sum']
+
+# ARI table
+ARI = np.zeros((len(methods_labels), len(methods_labels)))
+for i in range(len(methods_labels)):
+    for j in range(i, len(methods_labels)):
+        ARI[i, j] = metrics.adjusted_rand_score(methods_labels[i], methods_labels[j])
+        ARI[j, i] = ARI[i, j]
+
+ARI_df = pd.DataFrame(ARI, columns=methods_names, index=methods_names)
+ARI_df
+
