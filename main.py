@@ -35,6 +35,7 @@ import gc
 from sklearn.neighbors import NearestNeighbors
 from pythresh.thresholds.dsn import DSN
 import gower
+from torchsummary import summary
 
 
 from itertools import combinations
@@ -82,12 +83,12 @@ def PCA_tSNE_visualization(data2visualize, NCOMP, LABELS, PAL='viridis', title_a
 
 
   # Plots
-  fig1000 = plt.figure(figsize=(5,10))
+  fig1000 = plt.figure(figsize=(10,5))
   if show_title: fig1000.suptitle(f'Reduced dataset - {title_addition}', fontsize=16)
 
 
   # Plot 1: 2D image of the entire dataset
-  ax1 = fig1000.add_subplot(211)
+  ax1 = fig1000.add_subplot(121)
   sns.scatterplot(x=pca_result[:,0], y=pca_result[:,1], ax=ax1, hue=LABELS, palette=PAL)
   ax1.set_xlabel('Dimension 1', fontsize=10)
   ax1.set_ylabel('Dimension 2', fontsize=10)
@@ -96,7 +97,7 @@ def PCA_tSNE_visualization(data2visualize, NCOMP, LABELS, PAL='viridis', title_a
     ax1.legend(legend)
   plt.grid()
 
-  ax2= fig1000.add_subplot(212)
+  ax2= fig1000.add_subplot(122)
   sns.scatterplot(x=tsne_results[:,0], y=tsne_results[:,1], ax=ax2, hue=LABELS, palette=PAL)
   ax2.set_xlabel('Dimension 1', fontsize=10)
   ax2.set_ylabel('Dimension 2', fontsize=10)
@@ -307,47 +308,11 @@ def gower_distance(x, y, metrics, weights=None):
     return prox/len(x)
 
 
-# %%
-def gower_matrix(data_x, data_y=None, cat_features=None, weights=None):
-    if data_y is None:
-        data_y = data_x
-
-    if cat_features is None:
-        cat_features = data_x.columns[data_x.dtypes == 'object'].tolist()
-
-    if weights is None:
-        weights = np.ones(data_x.shape[1])
-
-    X = data_x.values
-    Y = data_y.values
-
-    X_num = X[:, [i for i, col in enumerate(data_x.columns) if col not in cat_features]].astype(float)
-    X_cat = X[:, [i for i, col in enumerate(data_x.columns) if col in cat_features]]
-    Y_num = Y[:, [i for i, col in enumerate(data_y.columns) if col not in cat_features]].astype(float)
-    Y_cat = Y[:, [i for i, col in enumerate(data_y.columns) if col in cat_features]]
-
-    num_features = X_num.shape[1]
-    cat_features = X_cat.shape[1]
-
-    dist_mat = np.zeros((X.shape[0], Y.shape[0]), dtype=float)
-
-    for i in tqdm(range(X.shape[0]), desc='Computing Gower matrix'):
-        x_num = X_num[i, :]
-        x_cat = X_cat[i, :]
-
-        # Euclidean distance for numerical features
-        num_dist = np.sqrt(np.sum((Y_num - x_num) ** 2, axis=1))
-
-        # Hamming distance for categorical features
-        cat_dist = np.sum(Y_cat != x_cat, axis=1)
-
-        dist_mat[i, :] = (num_dist + cat_dist) / (num_features + cat_features)
-    
-    return dist_mat
-
+# %% [markdown]
+# We do not consider weights as for our implementation we will maintain uniform weights, so we do not bother to implement them.
 
 # %%
-def proximity_matrix(data_x, data_y=None, metrics={'numeric': 'euclidean', 'categorical': 'hamming'}, cat_features=[], weights=None):
+def proximity_matrix(data_x, data_y=None, metrics={'numeric': 'euclidean', 'categorical': 'hamming'}, cat_features=[]):
     """
     Calculates the proximity matrix for a given dataset.
 
@@ -359,7 +324,6 @@ def proximity_matrix(data_x, data_y=None, metrics={'numeric': 'euclidean', 'cate
     Returns:
     prox_matrix (numpy array): The proximity matrix, where each element represents the proximity between two data points.
     """
-    if weights is None: weights = np.ones(data_x.shape[1])
     if data_y is None: data_y = data_x
 
     fun_metric = {
@@ -403,34 +367,11 @@ bool_cols_idx = [df.columns.get_loc(col) for col in bool_cols]
 cols = np.full(df.shape[1], False, dtype=bool)
 cols[bool_cols_idx] = True
 
-# %%
 prox_mat = proximity_matrix(data_x=df, cat_features=bool_cols)
-
-# %%
-prox_mat_2 = gower.gower_matrix(df, cat_features=cols)
-
-# %%
-prox_mat_2 = prox_mat
-
-# %%
-# if proximity_matrix.npy exists, load it
-mat_path = 'proximity_matrix.npy'
-try:
-    prox_mat = [[]]
-    prox_mat = np.load(f'datasets/{mat_path}')
-except FileNotFoundError:
-    # it takes 1.5 hours to compute the proximity matrix (i9-9900K)
-    prox_mat = proximity_matrix_symmetric(df, {np.bool_: 'hamming', np.float64: 'euclidean'})
-np.save(f'datasets/{mat_path}', prox_mat)
-
-# %%
-np.allclose(prox_mat, prox_mat_2)
 
 # %%
 # symmetry check
 print(np.allclose(prox_mat, prox_mat.T))
-
-# %%
 # check zero diagonal
 print(np.allclose(np.diag(prox_mat), 0))
 
@@ -442,24 +383,6 @@ fig1 = plt.figure(figsize=(20,15))
 
 # Plot 2: proximity matrix
 plt.imshow(prox_mat, interpolation='nearest', aspect='auto', cmap='viridis')
-plt.colorbar()
-
-plt.xlabel('Observations', fontsize=16)
-plt.xticks(np.arange(0, N, step=1000))
-plt.ylabel('Observations', fontsize=16)
-plt.yticks(np.arange(0, N, step=1000))
-plt.title('Proximity matrix')
-
-plt.show()
-
-# %%
-plt.style.use('default')
-
-N, M = prox_mat.shape
-fig1 = plt.figure(figsize=(20,15))
-
-# Plot 2: proximity matrix
-plt.imshow(prox_mat_2, interpolation='nearest', aspect='auto', cmap='viridis')
 plt.colorbar()
 
 plt.xlabel('Observations', fontsize=16)
@@ -486,19 +409,20 @@ dist, idx= knn.kneighbors()
 knn_score = dist[:, -1]
 
 # %%
-plt.hist(dist[:, -1], bins=100, label='Anomaly score')
+plt.hist(dist[:, -1], bins=100, label='Distance')
 # plt.title('Distance to 5th nearest neighbor')
-t1_bound = iqr_bound(knn_score)
-t2_bound = two_stage_iqr_bound(knn_score)
-plt.axvline(t1_bound, color='orange', linestyle='dashed', linewidth=1, label='Threshold: Stage 1')
-plt.axvline(t2_bound, color='red', linestyle='dashed', linewidth=1, label='Threshold: Stage 2')
+# t1_bound = iqr_bound(knn_score)
+# t2_bound = two_stage_iqr_bound(knn_score)
+# plt.axvline(t1_bound, color='orange', linestyle='dashed', linewidth=1, label='Threshold: Stage 1')
+# plt.axvline(t2_bound, color='red', linestyle='dashed', linewidth=1, label='Threshold: Stage 2')
 
 # plt.axvline(t1_bound, color='orange', linestyle='dashed', linewidth=1, label='Threshold')
-plt.xlabel('Anomaly score')
+plt.title('Distance to 5th nearest neighbor')
+plt.xlabel('Distance')
 plt.ylabel('Frequency')
 plt.xticks(np.arange(0, 1.1, step=0.1))
 plt.xlim(0, .6)
-plt.legend()
+# plt.legend()
 plt.show()
 
 # %%
@@ -638,30 +562,14 @@ plt.ylabel('LOF')
 plt.show()
 
 # %%
-# suggested labels
-
-anomaly_legend = ['Normal', 'Anomalous']
-PCA_tSNE_visualization(df, 2, LOF_labels, ['red', 'gray'], legend=anomaly_legend, title_addition='LOF')
-plot_float_comb_dimensions(df, LOF_labels, ['red', 'gray'], legend=anomaly_legend)
-
-# %% [markdown]
-# Just with a glance of PCA and tSNE visualization, we can say that it has not found many proper outliers. To further confirm this hypothesis we can explore more thoroughly some non-transformed dimensions.
-
-# %% [markdown]
-# For the sake of visualization we're plotting float columns only, and although they are a section of the dataset, by plotting every possible combination we can clearly see the density based method is, as a matter of fact, shit.
-
-# %%
-plot_float_comb_dimensions(df, LOF_labels, ['red', 'gray'], legend=['Normal', 'Anomalous'])
-
-# %%
 t2_bound = two_stage_iqr_bound(-LOF_values)
 
 t2_outliers_idx = np.where(-LOF_values > t2_bound)[0]
 print(f'Number of outliers: {len(t2_outliers_idx)}, {len(t2_outliers_idx)/N*100:.2f}%')
-NN_labels = np.ones(N)
-NN_labels[t2_outliers_idx] = -1
-PCA_tSNE_visualization(df, 2, NN_labels, ['red', 'gray'], legend=['Normal', 'Anomalous'], title_addition='LOF')
-plot_float_comb_dimensions(df, NN_labels, ['red', 'gray'], legend=['Normal', 'Anomalous'])
+LOF_labels = np.ones(N)
+LOF_labels[t2_outliers_idx] = -1
+PCA_tSNE_visualization(df, 2, LOF_labels, ['red', 'gray'], legend=['Normal', 'Anomalous'], title_addition='LOF')
+plot_float_comb_dimensions(df, LOF_labels, ['red', 'gray'], legend=['Normal', 'Anomalous'])
 
 # %% [markdown]
 # ----
@@ -674,7 +582,7 @@ plot_float_comb_dimensions(df, NN_labels, ['red', 'gray'], legend=['Normal', 'An
 # dbscan
 from sklearn.cluster import DBSCAN
 
-dbscan = DBSCAN(eps=0.125, min_samples=5, metric='precomputed')
+dbscan = DBSCAN(eps=0.075, min_samples=5, metric='precomputed')
 DBSCAN_labels = dbscan.fit_predict(prox_mat)
 DBSCAN_labels[np.where(DBSCAN_labels >= 0)[0]] = 1
 print(f'Number of outliers: {np.where(DBSCAN_labels == -1)[0].shape[0]}, {np.where(DBSCAN_labels == -1)[0].shape[0]/N*100:.2f}%')
@@ -704,7 +612,7 @@ for i, neighbour in enumerate(idx):
 adjacency_matrix[adjacency_matrix == np.inf] = 1000 # ensures connectivity for the shortest path algorithm
 
 # %%
-shortest_paths = shortest_path(adjacency_matrix, directed=False) # it takes around 6 minutes on a i9-9900K
+shortest_paths = shortest_path(adjacency_matrix, directed=False) # it takes around 9 minutes on a i9-9900K
 
 # %%
 # check if there are inf values
@@ -731,10 +639,16 @@ def compute_cof(avg_shortest_paths, indices):
 
 # %%
 cof_scores = compute_cof(avg_shortest_path, idx)
+t2_bound = two_stage_iqr_bound(cof_scores)
+
+
+# %%
+np.max(cof_scores)
 
 # %%
 plt.hist(cof_scores, bins=100)
 plt.title('COF scores')
+# plt.axvline(t2_bound, color='red', linestyle='dashed', linewidth=1, label='Threshold')
 plt.xlabel('COF')
 plt.ylabel('Frequency')
 plt.show()
@@ -760,22 +674,22 @@ plot_float_comb_dimensions(df, COF_labels, ['red', 'gray'], legend=['Normal', 'A
 # Since we will be using K-means++, to measure the distance between the datapoints and the centroid, by definition it is used the euclidean distance. Hence each boolean column will be interpreted as a float. Although this is a common practice, such a cast leads to losing information. This is why we may call this first approach Naive, as we allow ourselves to loose such knowledge.
 #
 # **But how would we approach this problem otherwise?**<br>
-# By rededfining the medoid structure, the distance and the update of the medoid.<br>
+# By rededfining the centroid structure, the distance and the update of the centroid.<br>
 #
-# __Medoid structure__<br>
+# __Centroid structure__<br>
 # Instead of using a cluster defined as a homogeneous array of floats, we will be using an heterogenous one, such that the "representative" for a boolean feature is a boolean, and the "representative" for a float is a float.
 #
 # __Distance__<br>
 # For the distance, we will be using the same approach used for computing the proximity matrix in the previous sections. This type of distance is also known as __Gower distance__ with uniform weights.<br>
 #
-# __Medoid update__<br>
-# After that we can properly assign each datapoint to its closest medoid and compute the next iteration's medoids.
+# __Centroid update__<br>
+# After that we can properly assign each datapoint to its closest centroid and compute the next iteration's centroids.
 # The classic approach wants to assign to the next iteration centroid the average value of each datapoint of a cluster. 
 # In our version we keep computing the average for the float features, and the mode for the booleans.
 #
 
 # %% [markdown]
-# Now we want to pinpoint a few observations that arise from using the __hamming distance__ for boolean features and the __mode__ while updating the medoid.
+# Now we want to pinpoint a few observations that arise from using the __hamming distance__ for boolean features and the __mode__ while updating the centroid.
 #
 # Computing the mode for boolean feature consists in checking the "label" that has the highest frequency, and a shortcut can be found by considering True as 1 and False as 0 then
 # $$
@@ -838,7 +752,7 @@ def kmeans_gower(data, n_clusters,metrics=None, weights=None, max_iter=300, rand
 
 
 # %%
-def kmeans_gower_revisited(data, n_clusters, max_iter=300, random_state=None, keep_types=False, result_queue=None):
+def kmeans_gower_optimized(data, n_clusters, max_iter=300, random_state=None, keep_types=False, result_queue=None):
     """
     Perform k-means clustering using the Gower distance metric.
 
@@ -855,36 +769,38 @@ def kmeans_gower_revisited(data, n_clusters, max_iter=300, random_state=None, ke
     - centroids: The final centroid positions.
     - inertia: The sum of squared distances between each data point and its nearest centroid.
     """
-    # Initialize centroids using k-means++ initialization
     template = data.sample(n_clusters, random_state=random_state).values
     centroids = data.sample(n_clusters, random_state=random_state).values.astype(float)
     bool_indices = [data.columns.get_loc(col) for col in bool_cols]
-    # float_indices = [data.columns.get_loc(col) for col in float_cols]
     data = data.values.astype(float)
 
-    # for _ in tqdm(range(max_iter), desc=f'K-means Gower for {n_clusters}'):
-    for _ in range(max_iter):
-        distances = np.array([np.array([np.linalg.norm(centroid - point) for centroid in centroids]) for point in data])
-        labels = np.argmin(distances, axis=1)
-        pass
-        new_centroids = np.array([data[labels == k].mean(axis=0) for k in range(n_clusters)]) 
-        new_centroids[:, bool_indices] = np.round(new_centroids[:, bool_indices]) # the crucial rounding, all of this mess just for this line
+    centroids_prev = np.zeros_like(centroids)  # Initialize centroids_prev
 
-        if np.allclose(new_centroids, centroids):
+    for _ in range(max_iter):
+        distances = np.sqrt(((data[:, np.newaxis] - centroids) ** 2).sum(axis=2)) # the 
+        labels = np.argmin(distances, axis=1)
+
+        for k in range(n_clusters):
+            centroids[k] = np.mean(data[labels == k], axis=0)
+
+        centroids[:, bool_indices] = np.round(centroids[:, bool_indices])
+
+        if np.allclose(centroids, centroids_prev):
             break
-        
-        centroids = new_centroids
-        
-    inertia = np.sum([np.linalg.norm(data[i] - centroids[labels[i]]) for i in range (data.shape[0])])
+
+        centroids_prev = centroids.copy()
+
+    inertia = np.sum((data - centroids[labels]) ** 2)
 
     if keep_types:
         template[:,bool_indices] = centroids[:,bool_indices] > .5
         template[:,not bool_indices] = centroids[:,not bool_indices]
         centroids = template
-
     if result_queue is not None:
         result_queue.put((labels, centroids, inertia))
+
     return labels, centroids, inertia
+
 
 
 # %% [markdown]
@@ -895,8 +811,12 @@ def kmeans_gower_revisited(data, n_clusters, max_iter=300, random_state=None, ke
 l, c, i = kmeans_gower(df, 10, max_iter=10)
 
 # %%
-lr, cr, ir =kmeans_gower_revisited(df, 4, max_iter=10, keep_types=True)
-lr, cr, ir
+# %%time
+lr, cr, ir =kmeans_gower_optimized(df, 10, max_iter=10)
+
+# %%
+# %%time
+KMeans(n_clusters=10, random_state=0).fit(df);
 
 # %%
 # kmeans++ clustering
@@ -911,7 +831,7 @@ plot_float_comb_dimensions(df, lr, 'viridis')
 # #### Finding the optimal number of clusters: Elbow method
 
 # %% [markdown]
-# The first step to run prototype-based anomaly detection with Kmeans++ is to find the optimal number of medoids. We will do so by using the elbow method.
+# The first step to run prototype-based anomaly detection with Kmeans++ is to find the optimal number of centroids. We will do so by using the elbow method.
 # To determine the optimal number of clusters with the elbow method we usually look for the "elbow" in the analyzed function, in our case a function having on the x-axis the number of clusters and on the y-axis the inertia (or intra-cluster distance).<br>
 # If we run the cells below we can notice how the elbow tends to be somewhat shallow, as it doesn't really mark a very steep elbow. So we decide to make a few observations, trying to define where is this "elbow point".<br><br>
 # By definition, the function taken into account with the elbow method is a decreasing function (although some fluctuations are present), and the "elbow" is the point where the function stops decreasing drastically. This behaviour can be analyzed by looking at the second derivative of such function. We can define the elbow method as the minima of the second derivative, the point where the function stops decreasing drastically.<br><br>
@@ -963,7 +883,7 @@ res_queue = queue.Queue()
 threads = []
 
 for k in r:
-    t = threading.Thread(target=kmeans_gower_revisited, args=(df, k, 100, None, False, res_queue))
+    t = threading.Thread(target=kmeans_gower_optimized, args=(df, k, 300, None, False, res_queue))
     threads.append(t)
     if len(threads) % 8 == 0:
         for t in threads:
@@ -1038,7 +958,7 @@ def elbow_method_run(k_range, result_queue):
 
 
 # %%
-def elbow_method_run_gower_revisited(data, k_range, result_queue, max_iter=100, max_workers=8):
+def elbow_method_run_gower_optimized(data, k_range, result_queue, max_iter=100, max_workers=8):
     """
     Runs the elbow method using the Gower distance metric to determine the optimal number of clusters.
 
@@ -1054,7 +974,7 @@ def elbow_method_run_gower_revisited(data, k_range, result_queue, max_iter=100, 
     threads = []
     
     for k in k_range:
-        t = threading.Thread(target=kmeans_gower_revisited, args=(data, k, max_iter, None, False, local_queue))
+        t = threading.Thread(target=kmeans_gower_optimized, args=(data, k, max_iter, None, False, local_queue))
         threads.append(t)
 
         if len(threads) % max_workers == 0:
@@ -1133,13 +1053,13 @@ plt.show()
 # %%
 max_k = 11
 optimal_ks = np.zeros(max_k)
-runs = 50 # our implementations is much slower than the sklearn one, so we can't afford to run too many times, this should take around 4 hours (max iters=100)
+runs = 500 # since our implementation does not optimize the initial cluster (it is a simple k-means, not k-means++), we need a bit more time to converge
 threads = []
 results = queue.Queue()
 max_workers = 8
 # elbow method
 for run in tqdm(range(runs)):
-    t = threading.Thread(target=elbow_method_run_gower_revisited, args=(df, range(1, max_k), results, 100, max_workers))
+    t = threading.Thread(target=elbow_method_run_gower_optimized, args=(df, range(1, max_k), results, 100, max_workers))
     threads.append(t)
     if len(threads) % max_workers == 0:
         for thread in threads:
@@ -1148,7 +1068,6 @@ for run in tqdm(range(runs)):
             thread.join()
             optimal_ks[results.get()] += 1
         threads = []
-        gc.collect()
 
 # execute the remaining threads
 for thread in threads:
@@ -1160,6 +1079,16 @@ for thread in threads:
 most_recurrent_k = np.argmax(optimal_ks) + 1
 print(f'The most recurrent optimal number of clusters is {most_recurrent_k}')
 
+# %%
+# optimal number of clusters histogram
+plt.bar(range(1, len(optimal_ks)+1), optimal_ks, alpha=.9)
+plt.axvline(x=most_recurrent_k, color='r', linestyle='dotted', alpha=.6)
+plt.xlabel('Optimal number of clusters')
+plt.ylabel('Frequency')
+plt.title('Frequency of optimal number of clusters')
+plt.xticks(range(1, max_k+1), rotation='vertical')
+plt.show()
+
 # %% [markdown]
 # Turns out that the two methods are not that different, and that could be expected as we proved that they differ only of a rounding operation.<br>
 # Best results are attained with **5-6 clusters** 
@@ -1168,44 +1097,37 @@ print(f'The most recurrent optimal number of clusters is {most_recurrent_k}')
 # ### Investigating on outliers
 
 # %%
-labels, medoids, inertia = kmeans_gower_revisited(df, 5, max_iter=100, keep_types=True)
+labels, centroids, inertia = kmeans_gower_optimized(df, 5, max_iter=300, keep_types=True)
 
 # %%
 PCA_tSNE_visualization(df, 5, labels, 'viridis')
 
 # %%
-medoids_df = pd.DataFrame(medoids, columns=df.columns).convert_dtypes()
+centroids_df = pd.DataFrame(centroids, columns=df.columns).convert_dtypes()
 df = df.convert_dtypes()
 
-(df.dtypes == medoids_df.dtypes).all()
+(df.dtypes == centroids_df.dtypes).all()
 
 # %% [markdown]
-# We first compute the proximity matrix (using our custom distance functions) of the datapoints and the medoids. We then extract only the distance of each point with its medoid and proceed the investigation with that distances
+# We first compute the proximity matrix (using our custom distance functions) of the datapoints and the centroids. We then extract only the distance of each point with its centroid and proceed the investigation with that distances
 
 # %%
-# proximity of datapoints to each medoid
-metrics = {np.bool_: 'hamming', np.float64: 'euclidean', float: 'euclidean'}
-prox_centers = proximity_matrix_asymmetric(df, medoids_df, metrics)
+# proximity of datapoints to each centroid
+prox_centers = proximity_matrix(data_x=df, data_y=centroids_df, cat_features=bool_cols)
 
 # %%
 # we still have to process it as we want the distance of each element to its own cluster center and not to all cluster centers
 prox_centers.shape
 
 # %%
-prox_centers = np.min(prox_centers, axis=1) # we don't need to use labels, as by definition an element's medoid is the closest to it
+km_scores = np.min(prox_centers, axis=1) # we don't need to use labels, as by definition an element's centroid is the closest to it
 
 # %%
-km_scores = prox_centers.copy()
-
-# %%
-plt.hist(prox_centers, bins=100)
-plt.title('Distance to medoids')
+plt.hist(km_scores, bins=100)
+plt.title('Distance to centroids')
 plt.xlabel('Distance')
 plt.ylabel('Frequency')
 plt.show()
-
-# %%
-prox_centers.shape
 
 # %%
 t2_bound = two_stage_iqr_bound(km_scores)
@@ -1250,8 +1172,8 @@ def pca_reconstruction_error(data, n_components):
     df_reconstructed[bool_cols] = df_reconstructed[bool_cols].astype(bool)
 
     metrics = {np.bool_: 'hamming', np.float64: 'euclidean', float: 'euclidean'}
-    error = np.array([gower_distance(df.iloc[i], df_reconstructed.iloc[i], metrics) for i in range(df.shape[0])])
-    
+    # error = np.array([gower_distance(df.iloc[i], df_reconstructed.iloc[i], metrics) for i in range(df.shape[0])])
+    error = np.diag(proximity_matrix(data_x=df, data_y=df_reconstructed, cat_features=bool_cols))
     return np.sum(error)/reconstructed.shape[0]
 
 
@@ -1287,22 +1209,10 @@ df_reconstructed[bool_cols] = df_reconstructed[bool_cols].astype(bool)
 
 # reconstruction error with gower distance
 metrics = {np.bool_: 'hamming', np.float64: 'euclidean', float: 'euclidean'}
-reconstruction_error = np.array([gower_distance(df.iloc[i], df_reconstructed.iloc[i], metrics) for i in range(df.shape[0])])
+pca_score = np.diag(proximity_matrix(data_x=df, data_y=df_reconstructed, cat_features=bool_cols))
 
 # %%
-reconstruction_error = gower.gower_matrix(df, df_reconstructed, cat_features=cols)
-reconstruction_error = np.diag(reconstruction_error)
-
-# %%
-pca_score = reconstruction_error.copy()
-
-# %%
-df1 = np.asarray(df)
-df2 = np.asarray(df)
-np.concatenate((df1, df2)).shape
-
-# %%
-plt.hist(reconstruction_error, bins=100)
+plt.hist(pca_score, bins=100)
 plt.title('Reconstruction error')
 plt.xlabel('Error')
 plt.ylabel('Frequency')
@@ -1356,20 +1266,15 @@ def train_autoencoder(autoencoder, dataloader, epochs, device):
             loss.backward()
             optimizer.step()
 
-def calculate_reconstruction_error(data, reconstructed_data, bool_cols, metrics_gower):
+def compute_reconstruction_error(data, reconstructed_data, bool_cols):
     reconstructed_data[bool_cols] = np.round(reconstructed_data[bool_cols]).astype(bool)
     
     data = data.astype(np.float32)
     reconstructed_data = reconstructed_data.astype(np.float32)
     
-    error = np.array([gower_distance(data.iloc[i], reconstructed_data.iloc[i], metrics_gower) for i in range(data.shape[0])])
+    error = np.diag(proximity_matrix(data_x=data, data_y=reconstructed_data, cat_features=bool_cols))
     return error
 
-
-
-
-# %%
-from torchsummary import summary
 
 # %%
 bool_data = df[bool_cols].values.astype(float)
@@ -1397,8 +1302,7 @@ with torch.no_grad():
 
 reconstructed_df = pd.DataFrame(reconstructed_data, columns=df.columns)
 
-metrics_gower = {np.bool_: 'hamming', np.float64: 'euclidean', float: 'euclidean'}
-ed_score = calculate_reconstruction_error(df, reconstructed_df, bool_cols, metrics_gower)
+ed_score = compute_reconstruction_error(df, reconstructed_df, bool_cols)
 
 # %%
 plt.hist(ed_score, bins=100)
@@ -1533,8 +1437,8 @@ plt.grid()
 plt.show()
 
 # %%
-methods_labels = [NN_labels, LOF_labels, DBSCAN_labels, COF_labels, KM_labels, ED_labels, WS_labels]
-methods_names = ['NN', 'LOF', 'DBSCAN', 'COF', 'K-Means', 'Autoencoder', 'Weighted sum']
+methods_labels = [NN_labels, LOF_labels, DBSCAN_labels, COF_labels, KM_labels, ED_labels, PCA_labels, WS_labels]
+methods_names = ['NN', 'LOF', 'DBSCAN', 'COF', 'K-Means', 'Autoencoder', 'PCA', 'Weighted sum']
 
 # ARI table
 ARI = np.zeros((len(methods_labels), len(methods_labels)))
@@ -1560,5 +1464,3 @@ V_measure_df
 
 # %% [markdown]
 # # Attach anomaly probability column to the original dataset
-
-# %%
