@@ -1,2 +1,3 @@
-# Unsupervised
-University Course Project
+# Unsupervised Learning: final project
+Anomaly detection plays a crucial role in various domains, including fraud detection, network intrusion detection, and medical diagnosis. Anomalies, being rare and significantly different from the norm, can have critical implications. However, detecting anomalies poses several challenges, such as the scarcity of labeled anomalous data, the need for unsupervised methods, and the high dimensionality of datasets.
+This report focuses on exploring unsupervised anomaly detection techniques applied to a high-dimensional medical dataset containing a mix of numerical and categorical features. We investigate several categories of anomaly detection methods, including proximity-based approaches, prototype-based methods, and reconstruction-based techniques.

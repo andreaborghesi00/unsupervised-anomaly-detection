@@ -267,6 +267,52 @@ PCA_tSNE_visualization(df, 2, np.ones(df.shape[0]), 'viridis')
 # We do not consider weights as for our implementation we will maintain uniform weights, so we do not bother to implement them.
 
 # %%
+def gower_distance(x, y, metrics, weights=None):
+    """
+    Calculates the overall proximity between two vectors, x and y, using a set of metrics and optional weights.
+
+    Parameters:
+    x (list): The first input vector.
+    y (list): The second input vector.
+    metrics (dict): A dictionary containing the metrics to be used for each type of element in the vectors. The keys represent the type of the element and the values represent the metric to be used.
+    weights (list, optional): A list of weights for each element in the vectors. If not provided, all elements are assumed to have equal weight.
+
+    Returns:
+    float: The overall proximity between the two input vectors.
+
+    Raises:
+    ValueError: If the input metrics is not a non-empty dictionary or if the two input vectors have different lengths.
+    ValueError: If the weights are negative.
+    """
+    
+    if type(metrics) != dict or len(metrics) == 0:
+        raise ValueError("The input metrics must be a non-empty dictionary in the form: {type: metric}") 
+    if len(x) != len(y):
+        raise ValueError(f'The two input vectors must have the same length found {len(x)} and {len(y)}')
+    if weights is None:
+        weights = np.ones_like(x)
+    elif weights < 0:
+        raise ValueError('The weights must be non-negative')
+    
+    fun_metric = {
+        'euclidean': lambda x, y: np.linalg.norm(x - y),
+        'cosine': lambda x, y: np.dot(x, y) / (np.linalg.norm(x) * np.linalg.norm(y)),
+        'manhattan': lambda x, y: np.sum(np.abs(x - y)),
+        'jaccard': lambda x, y: 1 - np.sum(np.minimum(x, y)) / np.sum(np.maximum(x, y)),
+        'pearson': lambda x, y: np.corrcoef(x, y)[0, 1],
+        'spearman': lambda x, y: 1 - 6 * np.sum((x - y) ** 2) / (len(x) * (len(x) ** 2 - 1)),
+        'hamming': lambda x, y: np.sum(x != y),
+        'mahalanobis': lambda x, y: np.sqrt((x - y).T @ np.linalg.inv(np.cov(x)) @ (x - y)),
+    }
+
+    prox = 0
+    for xk, yk, wk in zip(x, y, weights): 
+        prox += wk*fun_metric[metrics[type(xk)]](xk, yk)     
+    return prox/len(x)
+
+
+
+# %%
 def proximity_matrix(data_x, data_y=None, metrics={'numeric': 'euclidean', 'categorical': 'hamming'}, cat_features=[]):
     """
     Computes the proximity matrix for a given dataset(s).
@@ -296,7 +342,7 @@ def proximity_matrix(data_x, data_y=None, metrics={'numeric': 'euclidean', 'cate
         'hamming': lambda x, y: np.sum(x != y, axis=1),
         'cosine': lambda x, y: np.sum(x * y, axis=1) / (np.sqrt(np.sum(x ** 2, axis=1)) * np.sqrt(np.sum(y ** 2, axis=1)))
     }
-
+    
     X = data_x.values
     Y = data_y.values
 
@@ -855,8 +901,8 @@ nk = 4
 kmeans = KMeans(n_clusters=nk, init='k-means++', max_iter=1000, ).fit(df)
 labels = kmeans.labels_
 # kmeans++ visualization
-PCA_tSNE_visualization(df, 4, lr, 'viridis')
-plot_float_comb_dimensions(df, lr, 'viridis')
+PCA_tSNE_visualization(df, nk, labels, 'viridis')
+plot_float_comb_dimensions(df, labels, 'viridis')
 
 # %% [markdown]
 # #### Finding the optimal number of clusters: Elbow method
