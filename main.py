@@ -34,6 +34,7 @@ import concurrent.futures
 import gc
 from sklearn.neighbors import NearestNeighbors
 from pythresh.thresholds.dsn import DSN
+import gower
 
 
 from itertools import combinations
@@ -50,7 +51,7 @@ df.head(3)
 # # <center> Utility and Visualization functions
 
 # %%
-def PCA_tSNE_visualization(data2visualize, NCOMP, LABELS, PAL='viridis', title_addition='', legend=None):
+def PCA_tSNE_visualization(data2visualize, NCOMP, LABELS, PAL='viridis', title_addition='', legend=None, show_title=False):
 
   '''
   INPUT
@@ -81,12 +82,12 @@ def PCA_tSNE_visualization(data2visualize, NCOMP, LABELS, PAL='viridis', title_a
 
 
   # Plots
-  fig1000 = plt.figure(figsize=(10,5))
-  fig1000.suptitle(f'Reduced dataset - {title_addition}', fontsize=16)
+  fig1000 = plt.figure(figsize=(5,10))
+  if show_title: fig1000.suptitle(f'Reduced dataset - {title_addition}', fontsize=16)
 
 
   # Plot 1: 2D image of the entire dataset
-  ax1 = fig1000.add_subplot(121)
+  ax1 = fig1000.add_subplot(211)
   sns.scatterplot(x=pca_result[:,0], y=pca_result[:,1], ax=ax1, hue=LABELS, palette=PAL)
   ax1.set_xlabel('Dimension 1', fontsize=10)
   ax1.set_ylabel('Dimension 2', fontsize=10)
@@ -95,7 +96,7 @@ def PCA_tSNE_visualization(data2visualize, NCOMP, LABELS, PAL='viridis', title_a
     ax1.legend(legend)
   plt.grid()
 
-  ax2= fig1000.add_subplot(122)
+  ax2= fig1000.add_subplot(212)
   sns.scatterplot(x=tsne_results[:,0], y=tsne_results[:,1], ax=ax2, hue=LABELS, palette=PAL)
   ax2.set_xlabel('Dimension 1', fontsize=10)
   ax2.set_ylabel('Dimension 2', fontsize=10)
@@ -296,7 +297,8 @@ def gower_distance(x, y, metrics, weights=None):
         'jaccard': lambda x, y: 1 - np.sum(np.minimum(x, y)) / np.sum(np.maximum(x, y)),
         'pearson': lambda x, y: np.corrcoef(x, y)[0, 1],
         'spearman': lambda x, y: 1 - 6 * np.sum((x - y) ** 2) / (len(x) * (len(x) ** 2 - 1)),
-        'hamming': lambda x, y: np.sum(x != y)
+        'hamming': lambda x, y: np.sum(x != y),
+        'mahalanobis': lambda x, y: np.sqrt((x - y).T @ np.linalg.inv(np.cov(x)) @ (x - y)),
     }
 
     prox = 0
@@ -306,7 +308,46 @@ def gower_distance(x, y, metrics, weights=None):
 
 
 # %%
-def proximity_matrix_symmetric(data, metrics, weights=None):
+def gower_matrix(data_x, data_y=None, cat_features=None, weights=None):
+    if data_y is None:
+        data_y = data_x
+
+    if cat_features is None:
+        cat_features = data_x.columns[data_x.dtypes == 'object'].tolist()
+
+    if weights is None:
+        weights = np.ones(data_x.shape[1])
+
+    X = data_x.values
+    Y = data_y.values
+
+    X_num = X[:, [i for i, col in enumerate(data_x.columns) if col not in cat_features]].astype(float)
+    X_cat = X[:, [i for i, col in enumerate(data_x.columns) if col in cat_features]]
+    Y_num = Y[:, [i for i, col in enumerate(data_y.columns) if col not in cat_features]].astype(float)
+    Y_cat = Y[:, [i for i, col in enumerate(data_y.columns) if col in cat_features]]
+
+    num_features = X_num.shape[1]
+    cat_features = X_cat.shape[1]
+
+    dist_mat = np.zeros((X.shape[0], Y.shape[0]), dtype=float)
+
+    for i in tqdm(range(X.shape[0]), desc='Computing Gower matrix'):
+        x_num = X_num[i, :]
+        x_cat = X_cat[i, :]
+
+        # Euclidean distance for numerical features
+        num_dist = np.sqrt(np.sum((Y_num - x_num) ** 2, axis=1))
+
+        # Hamming distance for categorical features
+        cat_dist = np.sum(Y_cat != x_cat, axis=1)
+
+        dist_mat[i, :] = (num_dist + cat_dist) / (num_features + cat_features)
+    
+    return dist_mat
+
+
+# %%
+def proximity_matrix(data_x, data_y=None, metrics={'numeric': 'euclidean', 'categorical': 'hamming'}, cat_features=[], weights=None):
     """
     Calculates the proximity matrix for a given dataset.
 
@@ -318,36 +359,39 @@ def proximity_matrix_symmetric(data, metrics, weights=None):
     Returns:
     prox_matrix (numpy array): The proximity matrix, where each element represents the proximity between two data points.
     """
+    if weights is None: weights = np.ones(data_x.shape[1])
+    if data_y is None: data_y = data_x
 
-    prox_matrix = np.zeros((data.shape[0], data.shape[0]))
-    for i in tqdm(range(data.shape[0]), desc='Computing proximity matrix'):
-        for j in range(i, data.shape[0]): # since the matrix is symmetric we start from i, computing the upper triangle
-            prox_matrix[i, j] = gower_distance(data.iloc[i], data.iloc[j], metrics, weights)
-            prox_matrix[j, i] = prox_matrix[i, j]
-    return prox_matrix
+    fun_metric = {
+        'euclidean': lambda x, y: np.sqrt(np.sum((x - y) ** 2, axis=1)),
+        'manhattan': lambda x, y: np.sum(np.abs(x - y), axis=1),
+        'hamming': lambda x, y: np.sum(x != y, axis=1),
+    }
 
+    X = data_x.values
+    Y = data_y.values
 
-# %%
-def proximity_matrix_asymmetric(data1, data2, metrics, weights=None):
-    """
-    Calculates the proximity matrix between two datasets.
+    X_num = X[:, [i for i, col in enumerate(data_x.columns) if col not in cat_features]].astype(float)
+    X_cat = X[:, [i for i, col in enumerate(data_x.columns) if col in cat_features]]
+    Y_num = Y[:, [i for i, col in enumerate(data_y.columns) if col not in cat_features]].astype(float)
+    Y_cat = Y[:, [i for i, col in enumerate(data_y.columns) if col in cat_features]]
 
-    Parameters:
-    data1 (pandas DataFrame): The first input dataset.
-    data2 (pandas DataFrame): The second input dataset.
-    metrics (dict): A dictionary containing the metrics to be used for each type of element in the vectors. The keys represent the type of the element and the values represent the metric to be used.
-    weights (list, optional): A list of weights for each element in the vectors. If not provided, all elements are assumed to have equal weight.
+    X_num = np.array(X_num)
+    X_cat = np.array(X_cat)
 
-    Returns:
-    prox_matrix (numpy array): The proximity matrix, where each element represents the proximity between two data points.
-    """
-    # if data1 == data2:
-    #     return proximity_matrix_symmetric(data1, metrics, weights)
-    
-    prox_matrix = np.zeros((data1.shape[0], data2.shape[0]))
-    for i in tqdm(range(data1.shape[0]), desc='Computing proximity matrix'):
-        for j in range(data2.shape[0]):
-            prox_matrix[i, j] = gower_distance(data1.iloc[i], data2.iloc[j], metrics, weights)
+    metric_num = fun_metric[metrics['numeric']]
+    metric_cat = fun_metric[metrics['categorical']]
+
+    prox_matrix = np.zeros((data_x.shape[0], data_y.shape[0]))
+    for i in tqdm(range(data_x.shape[0]), desc='Computing proximity matrix'):
+        x_num = X_num[i, :]
+        x_cat = X_cat[i, :]
+
+        num_dist = metric_num(x_num, Y_num)
+        cat_dist = metric_cat(x_cat, Y_cat)
+
+        prox_matrix[i,:] = (num_dist + cat_dist) / (X_num.shape[1] + X_cat.shape[1])
+
     return prox_matrix
 
 
@@ -355,13 +399,32 @@ def proximity_matrix_asymmetric(data1, data2, metrics, weights=None):
 # Since there is no information available regarding the semantic of the features, all weights are set to one.
 
 # %%
+bool_cols_idx = [df.columns.get_loc(col) for col in bool_cols]
+cols = np.full(df.shape[1], False, dtype=bool)
+cols[bool_cols_idx] = True
+
+# %%
+prox_mat = proximity_matrix(data_x=df, cat_features=bool_cols)
+
+# %%
+prox_mat_2 = gower.gower_matrix(df, cat_features=cols)
+
+# %%
+prox_mat_2 = prox_mat
+
+# %%
 # if proximity_matrix.npy exists, load it
+mat_path = 'proximity_matrix.npy'
 try:
-    prox_mat = np.load('datasets/proximity_matrix.npy')
-except:
+    prox_mat = [[]]
+    prox_mat = np.load(f'datasets/{mat_path}')
+except FileNotFoundError:
     # it takes 1.5 hours to compute the proximity matrix (i9-9900K)
     prox_mat = proximity_matrix_symmetric(df, {np.bool_: 'hamming', np.float64: 'euclidean'})
-    np.save('datasets/proximity_matrix.npy', prox_mat)
+np.save(f'datasets/{mat_path}', prox_mat)
+
+# %%
+np.allclose(prox_mat, prox_mat_2)
 
 # %%
 # symmetry check
@@ -375,10 +438,28 @@ print(np.allclose(np.diag(prox_mat), 0))
 plt.style.use('default')
 
 N, M = prox_mat.shape
-fig1 = plt.figure(figsize=(15,15))
+fig1 = plt.figure(figsize=(20,15))
 
 # Plot 2: proximity matrix
 plt.imshow(prox_mat, interpolation='nearest', aspect='auto', cmap='viridis')
+plt.colorbar()
+
+plt.xlabel('Observations', fontsize=16)
+plt.xticks(np.arange(0, N, step=1000))
+plt.ylabel('Observations', fontsize=16)
+plt.yticks(np.arange(0, N, step=1000))
+plt.title('Proximity matrix')
+
+plt.show()
+
+# %%
+plt.style.use('default')
+
+N, M = prox_mat.shape
+fig1 = plt.figure(figsize=(20,15))
+
+# Plot 2: proximity matrix
+plt.imshow(prox_mat_2, interpolation='nearest', aspect='auto', cmap='viridis')
 plt.colorbar()
 
 plt.xlabel('Observations', fontsize=16)
@@ -405,12 +486,19 @@ dist, idx= knn.kneighbors()
 knn_score = dist[:, -1]
 
 # %%
-plt.hist(dist[:, -1], bins=100)
-plt.title('Distance to 5th nearest neighbor')
-plt.xlabel('Distance')
+plt.hist(dist[:, -1], bins=100, label='Anomaly score')
+# plt.title('Distance to 5th nearest neighbor')
+t1_bound = iqr_bound(knn_score)
+t2_bound = two_stage_iqr_bound(knn_score)
+plt.axvline(t1_bound, color='orange', linestyle='dashed', linewidth=1, label='Threshold: Stage 1')
+plt.axvline(t2_bound, color='red', linestyle='dashed', linewidth=1, label='Threshold: Stage 2')
+
+# plt.axvline(t1_bound, color='orange', linestyle='dashed', linewidth=1, label='Threshold')
+plt.xlabel('Anomaly score')
 plt.ylabel('Frequency')
 plt.xticks(np.arange(0, 1.1, step=0.1))
-plt.xlim(0, 1)
+plt.xlim(0, .6)
+plt.legend()
 plt.show()
 
 # %%
@@ -572,7 +660,7 @@ t2_outliers_idx = np.where(-LOF_values > t2_bound)[0]
 print(f'Number of outliers: {len(t2_outliers_idx)}, {len(t2_outliers_idx)/N*100:.2f}%')
 NN_labels = np.ones(N)
 NN_labels[t2_outliers_idx] = -1
-PCA_tSNE_visualization(df, 2, NN_labels, ['red', 'gray'], legend=['Normal', 'Anomalous'], title_addition='NN')
+PCA_tSNE_visualization(df, 2, NN_labels, ['red', 'gray'], legend=['Normal', 'Anomalous'], title_addition='LOF')
 plot_float_comb_dimensions(df, NN_labels, ['red', 'gray'], legend=['Normal', 'Anomalous'])
 
 # %% [markdown]
@@ -1175,11 +1263,13 @@ for n in tqdm(range(1, max_components)):
     error = pca_reconstruction_error(df, n)
     errors.append(error)
 
-plt.plot(range(1, max_components), errors, marker='o')
+plt.plot(range(1, max_components), errors, marker='o', label='Reconstruction error')
 plt.xlabel('Number of components')
 plt.ylabel('Reconstruction error')
-plt.title('Reconstruction error vs number of components')
+# plt.title('Reconstruction error vs number of components')
 plt.xticks(range(1, max_components))
+plt.axvline(x=6, color='r', linestyle='dotted', label='Optimal number of components')
+plt.legend()
 plt.grid()
 plt.show()
 
@@ -1196,11 +1286,20 @@ df_reconstructed = pd.DataFrame(reconstructed, columns=df.columns)
 df_reconstructed[bool_cols] = df_reconstructed[bool_cols].astype(bool)
 
 # reconstruction error with gower distance
-
+metrics = {np.bool_: 'hamming', np.float64: 'euclidean', float: 'euclidean'}
 reconstruction_error = np.array([gower_distance(df.iloc[i], df_reconstructed.iloc[i], metrics) for i in range(df.shape[0])])
 
 # %%
+reconstruction_error = gower.gower_matrix(df, df_reconstructed, cat_features=cols)
+reconstruction_error = np.diag(reconstruction_error)
+
+# %%
 pca_score = reconstruction_error.copy()
+
+# %%
+df1 = np.asarray(df)
+df2 = np.asarray(df)
+np.concatenate((df1, df2)).shape
 
 # %%
 plt.hist(reconstruction_error, bins=100)
@@ -1214,7 +1313,7 @@ plt.show()
 t2_bound = two_stage_iqr_bound(pca_score)
 
 t2_outliers_idx = np.where(pca_score > t2_bound)[0]
-print(f'Number of outliers: {len(t2_outliers_idx)}')
+print(f'Number of outliers: {len(t2_outliers_idx)}, {len(t2_outliers_idx)/N*100:.2f}%')
 PCA_labels = np.ones(N)
 PCA_labels[t2_outliers_idx] = -1
 PCA_tSNE_visualization(df, 2, PCA_labels, ['red', 'gray'], legend=['Normal', 'Anomalous'], title_addition='PCA')
@@ -1267,6 +1366,12 @@ def calculate_reconstruction_error(data, reconstructed_data, bool_cols, metrics_
     return error
 
 
+
+
+# %%
+from torchsummary import summary
+
+# %%
 bool_data = df[bool_cols].values.astype(float)
 float_data = df.drop(columns=bool_cols).values.astype(float)
 
@@ -1281,6 +1386,9 @@ input_dim = tensor_data.shape[1]
 encoding_dim = 6
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 autoencoder = Autoencoder(input_dim, encoding_dim).to(device)
+summary(autoencoder, (input_dim,));
+
+# %%
 train_autoencoder(autoencoder, dataloader, epochs=100, device=device)
 
 autoencoder.eval()
@@ -1291,7 +1399,6 @@ reconstructed_df = pd.DataFrame(reconstructed_data, columns=df.columns)
 
 metrics_gower = {np.bool_: 'hamming', np.float64: 'euclidean', float: 'euclidean'}
 ed_score = calculate_reconstruction_error(df, reconstructed_df, bool_cols, metrics_gower)
-
 
 # %%
 plt.hist(ed_score, bins=100)
@@ -1304,7 +1411,7 @@ plt.show()
 t2_bound = two_stage_iqr_bound(ed_score)
 
 t2_outliers_idx = np.where(ed_score > t2_bound)[0]
-print(f'Number of outliers: {len(t2_outliers_idx)}')
+print(f'Number of outliers: {len(t2_outliers_idx)}, {len(t2_outliers_idx)/N*100:.2f}%')
 ED_labels = np.ones(N)
 ED_labels[t2_outliers_idx] = -1
 PCA_tSNE_visualization(df, 2, ED_labels, ['red', 'gray'], legend=['Normal', 'Anomalous'], title_addition='Autoencoder')
@@ -1319,7 +1426,7 @@ plot_float_comb_dimensions(df, ED_labels, ['red', 'gray'], legend=['Normal', 'An
 
 # %%
 # find all the points that are outliers in all the methods
-methods = [KM_labels, ED_labels, NN_labels, DBSCAN_labels]
+methods = [KM_labels, ED_labels, NN_labels]
 
 def common_outliers(methods):
     common_outliers = methods[0]
@@ -1330,7 +1437,7 @@ def common_outliers(methods):
     return common_outliers
 
 common_outliers_labels = common_outliers(methods)
-print(f'Number of common outliers: {np.sum(common_outliers_labels == -1)}\n\n')
+print(f'Number of common outliers: {np.sum(common_outliers_labels == -1)} ({np.sum(common_outliers_labels == -1)/N*100:.2f}%)')
 
 PCA_tSNE_visualization(df, 2, common_outliers_labels, ['red', 'gray'], legend=anomaly_legend, title_addition='Ensemble: AND')
 plot_float_comb_dimensions(df, common_outliers_labels, ['red', 'gray'], legend=anomaly_legend)
@@ -1339,7 +1446,7 @@ plot_float_comb_dimensions(df, common_outliers_labels, ['red', 'gray'], legend=a
 # ### <center> OR
 
 # %%
-methods = [KM_labels, ED_labels, NN_labels, DBSCAN_labels]
+methods = [KM_labels, ED_labels, NN_labels]
 
 def sum_outliers(methods):
     sum_outliers = methods[0]
@@ -1349,7 +1456,7 @@ def sum_outliers(methods):
     return sum_outliers
 
 sum_outliers_labels = sum_outliers(methods)
-print(f'Number of sum outliers: {np.sum(sum_outliers_labels == -1)}\n\n')
+print(f'Number of sum outliers: {np.sum(sum_outliers_labels == -1)} ({np.sum(sum_outliers_labels == -1)/N*100:.2f}%)')
 
 PCA_tSNE_visualization(df, 2, sum_outliers_labels, ['red', 'gray'], legend=anomaly_legend, title_addition='Ensemble: OR')
 plot_float_comb_dimensions(df, sum_outliers_labels, ['red', 'gray'], legend=anomaly_legend)
@@ -1439,3 +1546,19 @@ for i in range(len(methods_labels)):
 ARI_df = pd.DataFrame(ARI, columns=methods_names, index=methods_names)
 ARI_df
 
+
+# %%
+# V-measure table
+V_measure = np.zeros((len(methods_labels), len(methods_labels)))
+for i in range(len(methods_labels)):
+    for j in range(i, len(methods_labels)):
+        V_measure[i, j] = metrics.v_measure_score(methods_labels[i], methods_labels[j])
+        V_measure[j, i] = V_measure[i, j]
+
+V_measure_df = pd.DataFrame(V_measure, columns=methods_names, index=methods_names)
+V_measure_df
+
+# %% [markdown]
+# # Attach anomaly probability column to the original dataset
+
+# %%
