@@ -263,63 +263,27 @@ PCA_tSNE_visualization(df, 2, np.ones(df.shape[0]), 'viridis')
 # %% [markdown]
 # #### <center>Proximity Matrix for mixed data-types
 
-# %%
-def gower_distance(x, y, metrics, weights=None):
-    """
-    Calculates the overall proximity between two vectors, x and y, using a set of metrics and optional weights.
-
-    Parameters:
-    x (list): The first input vector.
-    y (list): The second input vector.
-    metrics (dict): A dictionary containing the metrics to be used for each type of element in the vectors. The keys represent the type of the element and the values represent the metric to be used.
-    weights (list, optional): A list of weights for each element in the vectors. If not provided, all elements are assumed to have equal weight.
-
-    Returns:
-    float: The overall proximity between the two input vectors.
-
-    Raises:
-    ValueError: If the input metrics is not a non-empty dictionary or if the two input vectors have different lengths.
-    ValueError: If the weights are negative.
-    """
-    
-    if type(metrics) != dict or len(metrics) == 0:
-        raise ValueError("The input metrics must be a non-empty dictionary in the form: {type: metric}") 
-    if len(x) != len(y):
-        raise ValueError(f'The two input vectors must have the same length found {len(x)} and {len(y)}')
-    if weights is None:
-        weights = np.ones_like(x)
-    elif weights < 0:
-        raise ValueError('The weights must be non-negative')
-    
-    fun_metric = {
-        'euclidean': lambda x, y: np.linalg.norm(x - y),
-        'cosine': lambda x, y: np.dot(x, y) / (np.linalg.norm(x) * np.linalg.norm(y)),
-        'manhattan': lambda x, y: np.sum(np.abs(x - y)),
-        'jaccard': lambda x, y: 1 - np.sum(np.minimum(x, y)) / np.sum(np.maximum(x, y)),
-        'pearson': lambda x, y: np.corrcoef(x, y)[0, 1],
-        'spearman': lambda x, y: 1 - 6 * np.sum((x - y) ** 2) / (len(x) * (len(x) ** 2 - 1)),
-        'hamming': lambda x, y: np.sum(x != y),
-        'mahalanobis': lambda x, y: np.sqrt((x - y).T @ np.linalg.inv(np.cov(x)) @ (x - y)),
-    }
-
-    prox = 0
-    for xk, yk, wk in zip(x, y, weights): 
-        prox += wk*fun_metric[metrics[type(xk)]](xk, yk)     
-    return prox/len(x)
-
-
 # %% [markdown]
 # We do not consider weights as for our implementation we will maintain uniform weights, so we do not bother to implement them.
 
 # %%
 def proximity_matrix(data_x, data_y=None, metrics={'numeric': 'euclidean', 'categorical': 'hamming'}, cat_features=[]):
     """
-    Calculates the proximity matrix for a given dataset.
+    Computes the proximity matrix for a given dataset(s).
 
     Parameters:
-    data (pandas DataFrame): The input dataset.
-    metrics (dict): A dictionary containing the metrics to be used for each type of element in the vectors. The keys represent the type of the element and the values represent the metric to be used.
-    weights (list, optional): A list of weights for each element in the vectors. If not provided, all elements are assumed to have equal weight.
+    data_x (pandas DataFrame): The input dataset.
+    data_y (pandas DataFrame): The dataset to compare with. If None, it will be the same as data_x.
+    metrics (dict): A dictionary containing the metrics to use for the numeric and categorical features. 
+    It should have the following structure:
+        ```
+        {
+            'numeric': 'euclidean',
+            'categorical': 'hamming'
+        }
+        ```
+        Available metrics are: 'euclidean', 'manhattan', 'hamming', 'cosine'
+    cat_features (list): A list containing the names of the categorical features.
 
     Returns:
     prox_matrix (numpy array): The proximity matrix, where each element represents the proximity between two data points.
@@ -330,6 +294,7 @@ def proximity_matrix(data_x, data_y=None, metrics={'numeric': 'euclidean', 'cate
         'euclidean': lambda x, y: np.sqrt(np.sum((x - y) ** 2, axis=1)),
         'manhattan': lambda x, y: np.sum(np.abs(x - y), axis=1),
         'hamming': lambda x, y: np.sum(x != y, axis=1),
+        'cosine': lambda x, y: np.sum(x * y, axis=1) / (np.sqrt(np.sum(x ** 2, axis=1)) * np.sqrt(np.sum(y ** 2, axis=1)))
     }
 
     X = data_x.values
@@ -359,6 +324,67 @@ def proximity_matrix(data_x, data_y=None, metrics={'numeric': 'euclidean', 'cate
     return prox_matrix
 
 
+# %%
+def proximity_matrix_diag(data_x, data_y=None, metrics={'numeric': 'euclidean', 'categorical': 'hamming'}, cat_features=[]):
+    """
+    Computes the diagonal only of the proximity matrix for a given dataset(s).
+    This is useful when we only need the proximity of the data points with themselves, or when we want to compare the proximity of the data points with themselves with the proximity of the data points with other data points.
+
+    Parameters:
+    data_x (pandas DataFrame): The input dataset.
+    data_y (pandas DataFrame): The dataset to compare with. If None, it will be the same as data_x.
+    metrics (dict): A dictionary containing the metrics to use for the numeric and categorical features. 
+    It should have the following structure:
+        ```
+        {
+            'numeric': 'euclidean',
+            'categorical': 'hamming'
+        }
+        ```
+        Available metrics are: 'euclidean', 'manhattan', 'hamming', 'cosine'
+    cat_features (list): A list containing the names of the categorical features.
+
+    Returns:
+    prox_matrix (numpy array): The proximity matrix, where each element represents the proximity between two data points.
+    """
+    if data_y is None: data_y = data_x
+
+    fun_metric = {
+        'euclidean': lambda x, y: np.sqrt(np.sum((x - y) ** 2)),
+        'manhattan': lambda x, y: np.sum(np.abs(x - y)),
+        'hamming': lambda x, y: np.sum(x != y),
+        'cosine': lambda x, y: np.sum(x * y) / (np.sqrt(np.sum(x ** 2)) * np.sqrt(np.sum(y ** 2)))
+    }
+
+    X = data_x.values
+    Y = data_y.values
+
+    X_num = X[:, [i for i, col in enumerate(data_x.columns) if col not in cat_features]].astype(float)
+    X_cat = X[:, [i for i, col in enumerate(data_x.columns) if col in cat_features]]
+    Y_num = Y[:, [i for i, col in enumerate(data_y.columns) if col not in cat_features]].astype(float)
+    Y_cat = Y[:, [i for i, col in enumerate(data_y.columns) if col in cat_features]]
+
+    X_num = np.array(X_num)
+    X_cat = np.array(X_cat)
+
+    metric_num = fun_metric[metrics['numeric']]
+    metric_cat = fun_metric[metrics['categorical']]
+
+    prox_matrix = np.zeros((data_x.shape[0], data_y.shape[0]))
+    for i in range(data_x.shape[0]):
+        x_num = X_num[i, :]
+        x_cat = X_cat[i, :]
+        y_num = Y_num[i, :]
+        y_cat = Y_cat[i, :]
+
+        num_dist = metric_num(x_num, y_num)
+        cat_dist = metric_cat(x_cat, y_cat)
+
+        prox_matrix[i,:] = (num_dist + cat_dist) / (X_num.shape[1] + X_cat.shape[1])
+
+    return prox_matrix
+
+
 # %% [markdown]
 # Since there is no information available regarding the semantic of the features, all weights are set to one.
 
@@ -368,6 +394,12 @@ cols = np.full(df.shape[1], False, dtype=bool)
 cols[bool_cols_idx] = True
 
 prox_mat = proximity_matrix(data_x=df, cat_features=bool_cols)
+
+# %%
+prox_mat_diag = proximity_matrix_diag(data_x=df, cat_features=bool_cols)
+
+# %%
+np.allclose(np.diag(prox_mat), prox_mat_diag)
 
 # %%
 # symmetry check
@@ -410,13 +442,12 @@ knn_score = dist[:, -1]
 
 # %%
 plt.hist(dist[:, -1], bins=100, label='Distance')
-# plt.title('Distance to 5th nearest neighbor')
 # t1_bound = iqr_bound(knn_score)
 # t2_bound = two_stage_iqr_bound(knn_score)
 # plt.axvline(t1_bound, color='orange', linestyle='dashed', linewidth=1, label='Threshold: Stage 1')
 # plt.axvline(t2_bound, color='red', linestyle='dashed', linewidth=1, label='Threshold: Stage 2')
-
 # plt.axvline(t1_bound, color='orange', linestyle='dashed', linewidth=1, label='Threshold')
+
 plt.title('Distance to 5th nearest neighbor')
 plt.xlabel('Distance')
 plt.ylabel('Frequency')
@@ -1173,7 +1204,7 @@ def pca_reconstruction_error(data, n_components):
 
     metrics = {np.bool_: 'hamming', np.float64: 'euclidean', float: 'euclidean'}
     # error = np.array([gower_distance(df.iloc[i], df_reconstructed.iloc[i], metrics) for i in range(df.shape[0])])
-    error = np.diag(proximity_matrix(data_x=df, data_y=df_reconstructed, cat_features=bool_cols))
+    error = proximity_matrix_diag(data_x=df, data_y=df_reconstructed, cat_features=bool_cols)
     return np.sum(error)/reconstructed.shape[0]
 
 
@@ -1272,7 +1303,7 @@ def compute_reconstruction_error(data, reconstructed_data, bool_cols):
     data = data.astype(np.float32)
     reconstructed_data = reconstructed_data.astype(np.float32)
     
-    error = np.diag(proximity_matrix(data_x=data, data_y=reconstructed_data, cat_features=bool_cols))
+    error = proximity_matrix_diag(data_x=data, data_y=reconstructed_data, cat_features=bool_cols)
     return error
 
 
@@ -1464,3 +1495,11 @@ V_measure_df
 
 # %% [markdown]
 # # Attach anomaly probability column to the original dataset
+
+# %%
+df_anom_proba = pd.read_csv('datasets/data.csv', sep=';', index_col='Row')
+proba_column = 'Anomaly Probability'
+df_anom_proba[proba_column] = ws_scores
+df_anom_proba.to_csv('datasets/data_with_anomaly.csv', sep=';', index=True)
+df_anom_proba
+
