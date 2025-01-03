@@ -1,2 +1,3 @@
 datasets/proximity_matrix.npy
 main.ipynb
+.DS_Store
